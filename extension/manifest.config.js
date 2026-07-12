@@ -24,6 +24,14 @@ export default defineManifest({
     }
   ],
   action: {
-    default_title: "SSynch"
+    default_title: "SSynch",
+    // Same file as side_panel.default_path below — identical content/dark
+    // styling on purpose, no duplication. Setting this makes clicking the
+    // toolbar icon show a floating popup (from ANY tab) instead of nothing —
+    // side_panel alone doesn't open on icon click unless separately
+    // configured, and once a popup is set it takes precedence for icon
+    // clicks anyway. The side panel itself is unaffected: still reachable
+    // via Chrome's own side-panel toggle, just no longer via this icon.
+    default_popup: "src/sidepanel.html"
   }
 });

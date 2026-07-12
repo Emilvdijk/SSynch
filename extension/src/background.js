@@ -113,9 +113,18 @@ function connect() {
   socket.onopen = () => {
     const wasReconnecting = !!session.reconnecting;
     reconnectAttempts = 0;
-    sendToServer({ type: MessageType.HELLO, role: session.role, name: session.name });
+    // Ping BEFORE hello: for a guest, hello's reply ("sync") carries the
+    // host's current position, which content.js latency-compensates using
+    // the clock offset — sampled from ping's reply ("pong"). Sending hello
+    // first meant that initial position was almost always applied with an
+    // uncalibrated (zero) offset, landing slightly off and then visibly
+    // correcting itself a moment later once a heartbeat caught it — exactly
+    // what a "jump shortly after loading" looks like. This ordering gives
+    // the offset sample a head start so it's normally already applied by
+    // the time sync's reply is actually processed.
     lastPingAt = Date.now();
     sendToServer({ type: MessageType.PING, t0: lastPingAt });
+    sendToServer({ type: MessageType.HELLO, role: session.role, name: session.name });
     if (session.role === Role.HOST && session.descriptor) {
       sendToServer({
         type: MessageType.SET_VIDEO,
@@ -194,6 +203,13 @@ function disconnect() {
   }
   reconnectAttempts = 0;
   if (socket) {
+    // Tell the server we're intentionally leaving before closing, rather
+    // than relying on webSocketClose to notice — that event was observed to
+    // not fire promptly (sometimes not at all until another message arrived)
+    // for a plain client-initiated close in local wrangler dev.
+    if (socket.readyState === WebSocket.OPEN) {
+      sendToServer({ type: MessageType.BYE });
+    }
     socket.onclose = null;
     socket.close();
     socket = null;
@@ -280,11 +296,32 @@ function handleServerMessage(msg) {
 async function ensureGuestOnPage(sync) {
   if (session.role !== Role.GUEST || !sync.pageUrl) return;
 
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!activeTab) return;
+  // A guest has exactly ONE tab that follows the room, established once and
+  // then stuck to — not re-derived from "whichever tab happens to be
+  // focused right now." Without this, the host switching videos while the
+  // guest is looking at an unrelated tab (email, say) would navigate THAT
+  // tab instead of the room's actual tab.
+  let targetTab;
+  if (session.tabId != null) {
+    try {
+      targetTab = await chrome.tabs.get(session.tabId);
+    } catch {
+      // The tab is gone. chrome.tabs.onRemoved normally catches this
+      // immediately and already left the room — this is just a defensive
+      // fallback in case a sync raced ahead of that.
+      await leaveRoom();
+      return;
+    }
+  } else {
+    // First time this guest has ever resolved anything in this room — the
+    // currently active tab becomes the room's one persistent tab from here on.
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab) return;
+    targetTab = activeTab;
+  }
 
-  const onRightPage = normalizePageUrl(activeTab.url) === normalizePageUrl(sync.pageUrl);
-  session.tabId = activeTab.id;
+  const onRightPage = normalizePageUrl(targetTab.url) === normalizePageUrl(sync.pageUrl);
+  session.tabId = targetTab.id;
   // Persisted (not a one-off broadcast extra) so the side panel shows it
   // correctly even after a poll/reopen, and it clears itself once resolved.
   session.pendingNavigation = onRightPage ? null : sync.pageUrl;
@@ -297,10 +334,10 @@ async function ensureGuestOnPage(sync) {
     // stale commands until (or instead of) a navigation happens.
     session.videoResolved = false;
     await saveSession();
-    sendToTab(activeTab.id, { cmd: "detach" });
+    sendToTab(targetTab.id, { cmd: "detach" });
 
     if (session.autoFollow) {
-      await chrome.tabs.update(activeTab.id, { url: sync.pageUrl });
+      await chrome.tabs.update(targetTab.id, { url: sync.pageUrl });
       // Don't resolve here: chrome.tabs.update resolves once navigation is
       // *initiated*, not once the new page's content script has loaded. The
       // new page announces itself via "contentScriptReady" below, which is
@@ -421,6 +458,13 @@ function handleContentMessage(msg, sender) {
 
   switch (msg.event) {
     case "videoPicked": {
+      // The host can pick on any tab (see the side panel's/overlay's
+      // "Select video" button, which target whatever tab they're on) — if
+      // that's a DIFFERENT tab than before, the old tab's overlay would
+      // otherwise be left showing stale info forever, since notifyUI() only
+      // ever targets the CURRENT session.tabId going forward.
+      const previousTabId = session.tabId;
+
       session.descriptor = msg.descriptor;
       session.frameUrl = msg.frameUrl;
       session.frameId = sender.frameId;
@@ -440,6 +484,9 @@ function handleContentMessage(msg, sender) {
       }
       // enterPickMode went to every frame in the tab; tell the others to stand down.
       sendToTab(sender.tab.id, { cmd: "cancelPickMode" });
+      if (previousTabId != null && previousTabId !== session.tabId) {
+        sendToTab(previousTabId, { cmd: "updateOverlay", session: null });
+      }
       notifyUI({});
       break;
     }
@@ -521,18 +568,16 @@ function handleContentMessage(msg, sender) {
       break;
     }
 
-    // From the floating in-page overlay. Playback commands relay to whichever
-    // frame actually holds the video (session.frameId) — the overlay always
-    // renders in the top frame for consistent positioning, but the video
-    // itself may live in a different (even cross-origin) frame, as it does
-    // on Dailymotion.
-    case "overlayTogglePlayback": {
-      if (session.tabId != null) sendToTab(session.tabId, { cmd: "nativeTogglePlayback" }, session.frameId);
+    // From the floating in-page overlay's "Select video on this page" button
+    // (host only — the overlay hides it for guests). sender.tab.id is already
+    // the room's own tab, since that's the only tab the overlay ever exists in.
+    case "overlayPickVideo": {
+      sendToTab(sender.tab.id, { cmd: "enterPickMode", role: session.role });
       break;
     }
 
-    case "overlaySeek": {
-      if (session.tabId != null) sendToTab(session.tabId, { cmd: "nativeSeek", delta: msg.delta }, session.frameId);
+    case "overlayOpenHostPage": {
+      if (session.pageUrl) chrome.tabs.update(sender.tab.id, { url: session.pageUrl });
       break;
     }
 
@@ -554,6 +599,29 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (!session || session.role !== Role.HOST) return;
   if (tabId !== session.tabId) return;
   if (!changeInfo.url || normalizePageUrl(changeInfo.url) === normalizePageUrl(session.pageUrl)) return;
+
+  session.descriptor = null;
+  session.frameUrl = null;
+  session.pageUrl = null;
+  session.frameId = null;
+  session.videoResolved = false;
+  saveSession();
+  notifyUI({});
+  sendToServer({ type: MessageType.CLEAR_VIDEO });
+});
+
+// A guest has exactly one tab tracking the room — closing it means leaving,
+// not "wait for the host to eventually notice." A host closing their video
+// tab gets the same staleness cleanup as navigating away without re-picking
+// (the onUpdated listener above) — CLEAR_VIDEO, not leaving the room outright,
+// since the host's ROOM (the code, the connection) doesn't depend on one tab.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (!session || tabId !== session.tabId) return;
+
+  if (session.role === Role.GUEST) {
+    leaveRoom();
+    return;
+  }
 
   session.descriptor = null;
   session.frameUrl = null;

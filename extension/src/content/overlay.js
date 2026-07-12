@@ -17,7 +17,7 @@ const STYLES = `
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 14px;
-    padding: 12px 12px 10px;
+    padding: 12px;
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     color: #f2f2f2;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -30,6 +30,20 @@ const STYLES = `
   .dot.reconnecting { background: #eab308; }
   .role { font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; font-size: 11px; opacity: 0.9; }
   .code { margin-left: auto; opacity: 0.55; font-size: 11px; letter-spacing: 1px; }
+  .collapse-btn {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0;
+  }
+  .collapse-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
   .status {
     opacity: 0.85;
     font-size: 12px;
@@ -37,20 +51,34 @@ const STYLES = `
     margin-bottom: 10px;
     min-height: 16px;
   }
-  .controls { justify-content: center; gap: 8px; margin-bottom: 8px; }
-  .controls button {
+  .pick-btn {
+    width: 100%;
     background: rgba(255, 255, 255, 0.08);
     color: #fff;
     border: none;
     border-radius: 8px;
-    padding: 6px 10px;
+    padding: 7px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12px;
     font-family: inherit;
+    margin-bottom: 6px;
   }
-  .controls button:hover { background: rgba(255, 255, 255, 0.16); }
-  .controls button:active { background: rgba(255, 255, 255, 0.22); }
-  #playPause { min-width: 42px; font-size: 15px; }
+  .pick-btn:hover { background: rgba(255, 255, 255, 0.16); }
+  .pick-btn.hidden { display: none; }
+  .open-host-btn {
+    width: 100%;
+    background: rgba(79, 140, 255, 0.16);
+    color: #cfe0ff;
+    border: 1px solid rgba(79, 140, 255, 0.35);
+    border-radius: 8px;
+    padding: 7px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    margin-bottom: 6px;
+  }
+  .open-host-btn:hover { background: rgba(79, 140, 255, 0.26); }
+  .open-host-btn.hidden { display: none; }
   .leave-btn {
     width: 100%;
     background: transparent;
@@ -63,19 +91,6 @@ const STYLES = `
     font-family: inherit;
   }
   .leave-btn:hover { background: rgba(240, 128, 106, 0.1); }
-  .collapse-btn {
-    position: absolute;
-    top: 6px;
-    right: 8px;
-    background: none;
-    border: none;
-    color: #999;
-    cursor: pointer;
-    font-size: 15px;
-    line-height: 1;
-    padding: 2px 4px;
-  }
-  .collapse-btn:hover { color: #fff; }
   .pill {
     display: none;
     width: 38px;
@@ -97,7 +112,7 @@ const STYLES = `
 
 const DRIFT_LABELS = { seek: "correcting…", nudge: "adjusting…", hold: "in sync" };
 
-export function createOverlay({ onTogglePlayback, onSeek, onLeaveRoom }) {
+export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
   let hostEl = document.getElementById(HOST_ID);
   let shadow;
 
@@ -113,18 +128,15 @@ export function createOverlay({ onTogglePlayback, onSeek, onLeaveRoom }) {
     shadow.innerHTML = `
       <style>${STYLES}</style>
       <div class="card" id="card">
-        <button class="collapse-btn" id="collapseBtn" title="Collapse">–</button>
         <div class="row title-row">
           <span class="dot" id="dot"></span>
           <span class="role" id="role"></span>
           <span class="code" id="code"></span>
+          <button class="collapse-btn" id="collapseBtn" title="Collapse">–</button>
         </div>
         <div class="status" id="status"></div>
-        <div class="row controls">
-          <button id="seekBack" title="Back 10s">−10s</button>
-          <button id="playPause" title="Play/Pause">⏯</button>
-          <button id="seekFwd" title="Forward 10s">+10s</button>
-        </div>
+        <button class="pick-btn" id="pickBtn">Select video on this page</button>
+        <button class="open-host-btn" id="openHostBtn">Open host's page</button>
         <button class="leave-btn" id="leaveBtn">Leave room</button>
       </div>
       <div class="pill" id="pill" title="Expand">▶</div>
@@ -141,9 +153,8 @@ export function createOverlay({ onTogglePlayback, onSeek, onLeaveRoom }) {
       card.classList.remove("collapsed");
       pill.classList.remove("show");
     });
-    shadow.getElementById("playPause").addEventListener("click", () => onTogglePlayback());
-    shadow.getElementById("seekBack").addEventListener("click", () => onSeek(-10));
-    shadow.getElementById("seekFwd").addEventListener("click", () => onSeek(10));
+    shadow.getElementById("pickBtn").addEventListener("click", () => onPickVideo());
+    shadow.getElementById("openHostBtn").addEventListener("click", () => onOpenHostPage());
     shadow.getElementById("leaveBtn").addEventListener("click", () => onLeaveRoom());
   }
 
@@ -153,6 +164,15 @@ export function createOverlay({ onTogglePlayback, onSeek, onLeaveRoom }) {
 
     shadow.getElementById("role").textContent = session.role;
     shadow.getElementById("code").textContent = session.code;
+
+    // Only the host's pick gets broadcast to the room — same reasoning as
+    // the side panel hiding this for guests (see sidepanel.js).
+    shadow.getElementById("pickBtn").classList.toggle("hidden", session.role !== "host");
+
+    // Same condition as the side panel's equivalent button: guest, and the
+    // host is known to be on a different page than this tab currently shows.
+    const showOpenHostPage = session.role === "guest" && !!session.pendingNavigation;
+    shadow.getElementById("openHostBtn").classList.toggle("hidden", !showOpenHostPage);
 
     const lines = [];
     if (session.reconnecting) lines.push(`Reconnecting… (attempt ${session.reconnectAttempt ?? 1})`);
@@ -171,6 +191,7 @@ export function createOverlay({ onTogglePlayback, onSeek, onLeaveRoom }) {
     }
 
     if (session.playbackBlocked) lines.push("Playback blocked — click the page to allow it");
+    if (showOpenHostPage) lines.push("Host is watching a different page");
     lines.push(`${session.peers ?? 0} watching`);
 
     shadow.getElementById("status").textContent = lines.join("\n");

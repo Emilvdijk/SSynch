@@ -61,6 +61,18 @@ export class Room {
 
       case "ping": {
         ws.send(JSON.stringify({ type: "pong", t0: msg.t0, t1: Date.now() }));
+        // Cheap self-healing safety net: pings recur periodically regardless
+        // of playback state, so this bounds how long a stale peer count from
+        // a missed/delayed close event (observed in local wrangler dev — the
+        // Hibernation API's close detection isn't always prompt there) can persist.
+        this.broadcastPeerCount();
+        break;
+      }
+
+      case "bye": {
+        // Sent just before an intentional disconnect (leave room, close tab)
+        // — don't wait for webSocketClose to (maybe, eventually) fire.
+        this.broadcastPeerCountExcluding(ws);
         break;
       }
 
@@ -110,11 +122,15 @@ export class Room {
   }
 
   async webSocketClose(ws) {
-    this.broadcastPeerCount();
+    // Don't trust getWebSockets() to have already dropped `ws` by the time
+    // this fires — observed in local wrangler dev to sometimes still include
+    // it, which would otherwise briefly re-broadcast a stale (too-high) count
+    // right after a correct "bye"-triggered update already went out.
+    this.broadcastPeerCountExcluding(ws);
   }
 
   async webSocketError(ws) {
-    this.broadcastPeerCount();
+    this.broadcastPeerCountExcluding(ws);
   }
 
   isHost(ws) {
@@ -132,6 +148,12 @@ export class Room {
   broadcastPeerCount() {
     const count = this.state.getWebSockets().length;
     this.broadcast({ type: "peers", count });
+  }
+
+  /** Like broadcastPeerCount, but explicitly excludes `ws` from the count too — not just the recipient list. */
+  broadcastPeerCountExcluding(ws) {
+    const count = Math.max(0, this.state.getWebSockets().filter((s) => s !== ws).length);
+    this.broadcast({ type: "peers", count }, ws);
   }
 
   saveState(state) {

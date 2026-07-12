@@ -94,10 +94,20 @@ All 12 pieces are implemented:
 - **Worker + Room DO (Piece 6):** WebSocket Hibernation API
   (`state.acceptWebSocket`), SQLite-backed storage (`new_sqlite_classes`), no
   in-memory room-state kept across hibernation.
-- **Protocol (Piece 7):** `hello/setVideo/state/heartbeat/ping` client→server,
+- **Protocol (Piece 7):** `hello/setVideo/state/heartbeat/ping/bye` client→server,
   `sync/state/heartbeat/peers/pong` server→client — see
   [extension/src/shared/protocol.js](extension/src/shared/protocol.js) and
-  [server/src/index.js](server/src/index.js).
+  [server/src/index.js](server/src/index.js). `bye` is sent just before an
+  intentional disconnect (leave room, close tab) — `webSocketClose` was
+  observed to not fire promptly (sometimes not at all until another message
+  arrived) for a plain client-initiated close in local `wrangler dev`, which
+  otherwise left peer counts stale for other participants. `ping` is now
+  sent *before* `hello` on connect, not after — a guest's `sync` reply
+  carries the host's current position, latency-compensated using the clock
+  offset sampled from `ping`'s reply; sending hello first meant that initial
+  position was usually applied with an uncalibrated (zero) offset, landing
+  slightly off and then visibly self-correcting a moment later once a
+  heartbeat caught it.
 - **Guest linking (Piece 10):** passive by default ("host is watching X, open it?"
   button in the side panel), optional auto-follow toggle for `chrome.tabs.update`.
   `pageUrl` is derived from `sender.tab.url` (the tabs API), not the picking

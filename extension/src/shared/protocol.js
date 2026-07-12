@@ -8,6 +8,7 @@
 //   { type: "state", play, currentTime, rate, at }                 // any peer — symmetric control, on play/pause/seek
 //   { type: "heartbeat", currentTime, at }                         // any peer, periodic, only while playing
 //   { type: "ping", t0 }                                           // clock-offset handshake
+//   { type: "bye" }                                                // sent just before an intentional disconnect
 //
 // server -> client
 //   { type: "sync", play, currentTime, rate, at, descriptor, frameUrl, pageUrl, duration }
@@ -23,6 +24,7 @@ export const MessageType = Object.freeze({
   STATE: "state",
   HEARTBEAT: "heartbeat",
   PING: "ping",
+  BYE: "bye",
   SYNC: "sync",
   PEERS: "peers",
   PONG: "pong"

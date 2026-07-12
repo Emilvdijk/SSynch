@@ -254,9 +254,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     case "updateOverlay": {
       // Only the top frame renders it — a video living in a child/cross-origin
-      // frame (e.g. Dailymotion's player) still gets a top-frame-positioned
-      // overlay; controls relay through background to whichever frame holds
-      // the actual controller (see "nativeTogglePlayback"/"nativeSeek" below).
+      // frame (e.g. Dailymotion's player) still gets a top-frame-positioned overlay.
       if (!isTopFrame) {
         sendResponse({ ok: true });
         return false;
@@ -271,35 +269,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       if (!overlay) {
         overlay = createOverlay({
-          onTogglePlayback: () => chrome.runtime.sendMessage({ event: "overlayTogglePlayback" }),
-          onSeek: (delta) => chrome.runtime.sendMessage({ event: "overlaySeek", delta }),
+          onPickVideo: () => chrome.runtime.sendMessage({ event: "overlayPickVideo" }),
+          onOpenHostPage: () => chrome.runtime.sendMessage({ event: "overlayOpenHostPage" }),
           onLeaveRoom: () => chrome.runtime.sendMessage({ event: "overlayLeaveRoom" })
         });
       }
       overlay.update(msg.session);
       sendResponse({ ok: true });
-      return false;
-    }
-
-    // These two directly manipulate the actual <video> (not via applyRemote),
-    // so the resulting native play/pause/seeked event flows through the
-    // normal local-reporting pipeline exactly as if the user had clicked the
-    // page's own controls — no separate broadcast logic needed here.
-    case "nativeTogglePlayback": {
-      if (controller) {
-        if (controller.el.paused) controller.el.play().catch(() => {});
-        else controller.el.pause();
-      }
-      sendResponse({ ok: !!controller });
-      return false;
-    }
-
-    case "nativeSeek": {
-      if (controller) {
-        const duration = Number.isFinite(controller.el.duration) ? controller.el.duration : Infinity;
-        controller.el.currentTime = Math.max(0, Math.min(duration, controller.el.currentTime + msg.delta));
-      }
-      sendResponse({ ok: !!controller });
       return false;
     }
 
