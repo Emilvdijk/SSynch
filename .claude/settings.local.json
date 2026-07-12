@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(wrangler --version)",
+      "Bash(git --version)",
+      "Bash(npx vite *)",
+      "PowerShell(cd \"G:\\\\Projects\\\\SSynch\\\\extension\"; \\(Get-Content package-lock.json | Select-String '\"@crxjs/vite-plugin\"' -Context 0,1\\) 2>&1 | Select-Object -First 5)",
+      "PowerShell(cd \"G:\\\\Projects\\\\SSynch\\\\server\"; Start-Job -Name wranglerdev3 { Set-Location \"G:\\\\Projects\\\\SSynch\\\\server\"; npx wrangler dev --port 8787 } | Out-Null; Start-Sleep -Seconds 6; Receive-Job -Name wranglerdev3)",
+      "PowerShell(Get-Job -Name wranglerdev3 -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(cd \"G:\\\\Projects\\\\SSynch\\\\server\"; Start-Job -Name wdurtest { Set-Location \"G:\\\\Projects\\\\SSynch\\\\server\"; npx wrangler dev --port 8787 } | Out-Null; Start-Sleep -Seconds 7; Get-NetTCPConnection -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue)"
+    ]
+  }
+}
