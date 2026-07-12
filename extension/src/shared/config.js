@@ -2,7 +2,7 @@
 //   - local `wrangler dev` (server/):       "127.0.0.1:8787"
 //   - a deployed Worker (after Piece 8):    "ssynch.<your-subdomain>.workers.dev"
 // Left blank until you set one; connect() will refuse to run with this unset.
-export const SERVER_HOST = "127.0.0.1:8787";
+export const SERVER_HOST = "ssynch.emilvdijk.workers.dev";
 
 const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
