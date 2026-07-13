@@ -54,6 +54,7 @@ function render(session, extra = {}) {
           : "Video attached — controllable"
       );
     } else if (session.videoResolved === false) lines.push("Not currently synced to the host's video.");
+    else if (session.awaitingPlayback) lines.push("No video on the page yet — press play here, sync will pick it up automatically.");
     else lines.push("Video linked — confirming…");
   } else if (isGuest) {
     lines.push("Waiting for the host to select a video.");

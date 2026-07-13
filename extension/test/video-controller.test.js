@@ -72,6 +72,39 @@ test("a slow-to-settle remote seek is not echoed, even long after the old fixed 
   assert.equal(seekedCalls, 1, "a real seek afterward must still be reported");
 });
 
+test("a remote pause fought by the page's own player (custom players resuming to match their own state) is re-asserted", async () => {
+  const video = new FakeVideo();
+  video.paused = false; // was playing
+  const controller = new VideoController(video);
+
+  controller.applyRemote({ play: false });
+  assert.equal(video.paused, true, "pause applied immediately");
+
+  video.play(); // simulates the site's own player resuming moments later
+  assert.equal(video.paused, true, "our controller must win the fight and re-pause it");
+});
+
+test("a remote pause enforcement window doesn't fight a subsequent legitimate remote play", async () => {
+  const video = new FakeVideo();
+  video.paused = false;
+  const controller = new VideoController(video);
+
+  controller.applyRemote({ play: false });
+  controller.applyRemote({ play: true }); // e.g. someone un-paused right after
+  assert.equal(video.paused, false, "the later remote play must stick, not get fought by the pause enforcement");
+});
+
+test("a genuine later user play is not fought once the pause enforcement window has elapsed", async () => {
+  const video = new FakeVideo();
+  video.paused = false;
+  const controller = new VideoController(video);
+
+  controller.applyRemote({ play: false });
+  await wait(650); // past the enforcement window
+  video.play(); // a real, later, unrelated user action
+  assert.equal(video.paused, false, "a real play afterward must not be fought");
+});
+
 test("applyRemote reports play() rejection via onPlayBlocked (autoplay policy)", async () => {
   const video = new FakeVideo();
   video.play = () => Promise.reject(new Error("NotAllowedError"));

@@ -137,6 +137,13 @@ All 12 pieces are implemented:
   auto-detect when the structural descriptor fails to match, and retries over
   ~2.6s to cover late-hydrating SPAs, instead of one attempt and giving up
   (see the `setDescriptor` handler in [content.js](extension/src/content.js)).
+  If a `<video>` still isn't there after that (browse -> details page ->
+  press play sites — Netflix and most streaming-site clones, e.g. cineby.at —
+  don't mount one at all until a real person clicks play), it keeps watching
+  indefinitely instead of giving up, using the same shadow-DOM-aware
+  `observeDeep` mechanism as `watchForReplacement`, cancelled the moment it
+  succeeds or a new descriptor arrives. The side panel/overlay show "No video
+  on the page yet — press play here" during this wait so it doesn't look stuck.
   `AdGuard` (in [sync-engine.js](extension/src/content/sync-engine.js)) detects
   a likely ad break via `video.duration` swinging away from its established
   baseline and suppresses state/heartbeat broadcast until it reverts — each

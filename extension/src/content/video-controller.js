@@ -13,6 +13,13 @@ const ECHO_GUARD_MS = 50;
 // seek, got reported and rebroadcast, and made every OTHER peer (including
 // the host) re-seek to ~that same spot — a spurious, visible jump.
 const SEEK_GUARD_MAX_MS = 8000;
+// Some custom players (state-driven, e.g. React-based ones) keep their own
+// internal "should be playing" flag and resume the <video> a moment after an
+// externally-triggered pause() if that flag disagrees — confirmed on
+// cineby.at: a remote pause visibly hiccups for a frame or two, then the
+// site's own player resumes it, so the pause never actually sticks. Keep
+// re-asserting pause for this long to win that fight.
+const PAUSE_ENFORCE_MS = 600;
 
 export class VideoController {
   /** @param {HTMLMediaElement} el */
@@ -81,13 +88,21 @@ export class VideoController {
       seekTarget = currentTime;
     }
     if (typeof play === "boolean") {
+      // A remote play must win outright, even if it lands inside a still-active
+      // pause-enforcement window from a just-prior remote pause — otherwise
+      // _enforcePause's own "play" listener would immediately fight this
+      // legitimate one and re-pause it right back.
+      if (play) this._clearPauseEnforce?.();
       if (play && this.el.paused) {
         this.el.play().then(
           () => this.onPlayBlocked?.(false),
           () => this.onPlayBlocked?.(true)
         );
       }
-      if (!play && !this.el.paused) this.el.pause();
+      if (!play && !this.el.paused) {
+        this.el.pause();
+        this._enforcePause();
+      }
     }
 
     // A real seek needs its own (longer, event-driven) guard — see
@@ -147,7 +162,31 @@ export class VideoController {
     this.el.addEventListener("seeked", onSeeked);
   }
 
+  // See PAUSE_ENFORCE_MS above. Independent of the echo guard (isApplyingRemote)
+  // above/below — re-issuing pause() here is idempotent even if a stray extra
+  // "pause" report slips out, so it doesn't need to interact with that guard.
+  _enforcePause() {
+    this._clearPauseEnforce?.();
+    const deadline = Date.now() + PAUSE_ENFORCE_MS;
+    const onPlay = () => {
+      if (Date.now() > deadline) {
+        clear();
+        return;
+      }
+      this.el.pause();
+    };
+    const clear = () => {
+      this.el.removeEventListener("play", onPlay);
+      clearTimeout(timer);
+      this._clearPauseEnforce = null;
+    };
+    const timer = setTimeout(clear, PAUSE_ENFORCE_MS);
+    this._clearPauseEnforce = clear;
+    this.el.addEventListener("play", onPlay);
+  }
+
   destroy() {
+    this._clearPauseEnforce?.();
     this._clearSeekWait?.();
     if (this._guardTimer) clearTimeout(this._guardTimer);
     this.el.removeEventListener("play", this._onPlay);

@@ -1,7 +1,7 @@
 // Piece 1-2-11 entry point: runs in every frame (all_frames: true). Finds the
 // video, lets the user pick one, and relays play/pause/seek/heartbeat to the
 // service worker, which owns the actual WebSocket connection (Piece 3/9).
-import { autoDetectVideo, computeDescriptor, findVideoByDuration, resolveDescriptor, watchForReplacement } from "./content/video-detector.js";
+import { autoDetectVideo, computeDescriptor, findVideoByDuration, observeDeep, resolveDescriptor, watchForReplacement } from "./content/video-detector.js";
 import { pickVideo, cancelPickMode } from "./content/element-picker.js";
 import { VideoController } from "./content/video-controller.js";
 import { AdGuard, ClockOffset, compensatedTime, reconcileDrift, startHeartbeat } from "./content/sync-engine.js";
@@ -11,13 +11,21 @@ const frameUrl = location.href;
 const isTopFrame = window === window.top;
 
 // A guest's resolve attempt on late-hydrating SPAs (nothing there yet on the
-// first try) retries over this window before giving up.
+// first try) retries over this window before falling back to indefinite
+// watching (see stopPendingResolve below) — most sites hydrate well within it.
 const RESOLVE_RETRY_DELAYS_MS = [300, 800, 1500];
 
 let controller = null;
 let stopWatcher = null;
 let stopHeartbeat = null;
 let adGuard = null;
+// Some sites (Netflix-style: browse -> details page -> press play) never
+// mount a <video> element until a real person clicks play, whenever they get
+// around to it — no fixed retry window can cover that. Once the quick bursts
+// above are exhausted, this watches indefinitely instead of giving up (see
+// "setDescriptor" below). Cancelled the moment it succeeds, a new descriptor
+// arrives, or this frame is told to detach.
+let stopPendingResolve = null;
 // Host is authoritative from the moment it picks — nothing to wait for. A
 // guest starts NOT cleared to report until it's actually been given the
 // host's real position (see "setDescriptor" below): otherwise the guest's
@@ -132,6 +140,13 @@ function detach() {
   adGuard = null;
 }
 
+function cancelPendingResolve() {
+  if (stopPendingResolve) {
+    stopPendingResolve();
+    stopPendingResolve = null;
+  }
+}
+
 function reportLocalState(state) {
   if (!canReport) return; // not yet given the host's real position — nothing legitimate to report
   if (adGuard && adGuard.check(controller.el.duration)) return; // likely mid-ad — don't broadcast it
@@ -167,6 +182,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // background.js confirmed this tab is no longer on the host's page
       // (host moved on, auto-follow off) — stop controlling this video.
       detach();
+      cancelPendingResolve();
       sendResponse({ ok: true });
       return false;
     }
@@ -180,8 +196,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     case "setDescriptor": {
       // Guest side only — resolving the host's descriptor onto this frame's video.
       if (msg.frameUrl !== frameUrl) return false;
+      cancelPendingResolve(); // a fresh descriptor supersedes anything still being watched for
 
-      const attempt = (retriesLeft) => {
+      const tryResolve = () => {
         let el = resolveDescriptor(msg.descriptor);
         let usedFallback = false;
         if (!el && msg.duration) {
@@ -198,39 +215,63 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           el = autoDetectVideo();
           usedFallback = !!el;
         }
+        return { el, usedFallback };
+      };
 
+      const onFound = (el, usedFallback) => {
+        attach(el, false);
+        // Land at the host's actual position before allowing this guest to
+        // report anything — joining should mean "join the host at his
+        // spot," not "everyone jumps to wherever my fresh page happened to
+        // start." If there's genuinely nothing to sync to yet (a brand new
+        // room, host hasn't pressed play), there's nothing to apply, and
+        // canReport still opens up immediately below.
+        if (msg.initialState) {
+          const currentTime = compensatedTime(
+            { currentTime: msg.initialState.currentTime, play: msg.initialState.play, at: msg.initialState.at },
+            clockOffset
+          );
+          controller.applyRemote({ play: msg.initialState.play, rate: msg.initialState.rate, currentTime });
+        }
+        canReport = true;
+        chrome.runtime.sendMessage({ event: "resolved", ok: true, fallback: usedFallback });
+      };
+
+      const attempt = (retriesLeft) => {
+        const { el, usedFallback } = tryResolve();
         if (el) {
-          attach(el, false);
-          // Land at the host's actual position before allowing this guest to
-          // report anything — joining should mean "join the host at his
-          // spot," not "everyone jumps to wherever my fresh page happened to
-          // start." If there's genuinely nothing to sync to yet (a brand new
-          // room, host hasn't pressed play), there's nothing to apply, and
-          // canReport still opens up immediately below.
-          if (msg.initialState) {
-            const currentTime = compensatedTime(
-              { currentTime: msg.initialState.currentTime, play: msg.initialState.play, at: msg.initialState.at },
-              clockOffset
-            );
-            controller.applyRemote({ play: msg.initialState.play, rate: msg.initialState.rate, currentTime });
-          }
-          canReport = true;
-          chrome.runtime.sendMessage({ event: "resolved", ok: true, fallback: usedFallback });
+          onFound(el, usedFallback);
           return;
         }
 
         if (retriesLeft.length > 0) {
           // Nothing there yet — likely a late-hydrating SPA that hasn't
-          // mounted the player. Retry a few times before reporting failure.
+          // mounted the player. Retry a few times before falling back to
+          // indefinite watching.
           const [delay, ...rest] = retriesLeft;
           setTimeout(() => attempt(rest), delay);
-        } else {
-          chrome.runtime.sendMessage({ event: "resolved", ok: false });
+          return;
         }
+
+        // Quick retries exhausted. Some sites (browse -> details page ->
+        // press play, as on Netflix and most streaming-site clones) never
+        // mount a <video> at all until a real person clicks play, whenever
+        // they get around to it — no fixed window can cover that. Keep
+        // watching (shadow-DOM aware, same mechanism as watchForReplacement)
+        // instead of giving up; cancelPendingResolve() above/below stops it
+        // the moment it succeeds or is superseded.
+        chrome.runtime.sendMessage({ event: "resolveWaiting" });
+        stopPendingResolve = observeDeep(() => {
+          const { el, usedFallback } = tryResolve();
+          if (el) {
+            cancelPendingResolve();
+            onFound(el, usedFallback);
+          }
+        });
       };
 
       attempt(RESOLVE_RETRY_DELAYS_MS);
-      sendResponse({ ok: true }); // ack receipt only — the real result arrives async via "resolved"
+      sendResponse({ ok: true }); // ack receipt only — the real result arrives async via "resolved"/"resolveWaiting"
       return false;
     }
 

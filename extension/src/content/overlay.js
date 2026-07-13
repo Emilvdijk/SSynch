@@ -12,9 +12,9 @@ const STYLES = `
   .card {
     position: relative;
     width: 230px;
-    background: rgba(18, 18, 22, 0.88);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(18, 18, 22, 0.78);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 14px;
     padding: 12px;
@@ -110,9 +110,9 @@ const STYLES = `
     width: 38px;
     height: 38px;
     border-radius: 50%;
-    background: rgba(18, 18, 22, 0.88);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(18, 18, 22, 0.78);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     border: 1px solid rgba(255, 255, 255, 0.09);
     color: #fff;
     align-items: center;
@@ -208,6 +208,8 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
       else lines.push("Attached — controllable");
     } else if (session.videoResolved === false) {
       lines.push("Not currently synced");
+    } else if (session.awaitingPlayback) {
+      lines.push("No video yet — press play here");
     } else {
       lines.push("Confirming…");
     }

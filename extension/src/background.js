@@ -249,6 +249,7 @@ function handleServerMessage(msg) {
       session.pageUrl = msg.pageUrl;
       session.duration = msg.duration ?? null;
       session.videoResolved = null; // pending: this frame hasn't tried resolving it yet
+      session.awaitingPlayback = false; // fresh attempt — reset until/unless the quick retries below exhaust
       // Cached so a later resolve (e.g. a fresh page load after auto-follow
       // navigates) can still apply the host's position — see resolveOnTab.
       // Absent (not just falsy) when nobody has ever pressed play in this
@@ -512,11 +513,25 @@ function handleContentMessage(msg, sender) {
 
     case "resolved": {
       session.videoResolved = msg.ok;
+      session.awaitingPlayback = false;
       // Structural match failed but a best-effort (largest visible video)
       // fallback found something — likely right, but worth flagging so the
       // user knows to double-check rather than silently trusting it fully.
       session.videoResolvedVia = msg.ok ? (msg.fallback ? "fallback" : "descriptor") : null;
       if (msg.ok) session.pendingNavigation = null;
+      saveSession();
+      notifyUI({});
+      break;
+    }
+
+    // The quick resolve retries came up empty and content.js has switched to
+    // watching indefinitely (see setDescriptor in content.js) — some sites
+    // (Netflix-style: browse -> details page -> press play) never mount a
+    // <video> until a real person clicks play, whenever they get around to
+    // it. Distinct from plain "confirming…" so the user isn't left staring
+    // at a status that looks stuck.
+    case "resolveWaiting": {
+      session.awaitingPlayback = true;
       saveSession();
       notifyUI({});
       break;
@@ -553,6 +568,7 @@ function handleContentMessage(msg, sender) {
 
     case "videoLost": {
       session.videoResolved = false;
+      session.awaitingPlayback = false;
       if (session.role === Role.HOST) {
         // Genuinely gone (element removed), not just a source swap (that
         // case re-announces instead) — drop the stale descriptor/pageUrl,
