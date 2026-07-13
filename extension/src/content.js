@@ -84,10 +84,16 @@ function attach(el, asHost) {
       // instead of requiring the host to click "Select video" again.
       // No pageUrl here — background.js derives it from sender.tab.url,
       // since this frame may not be (and can't always safely know) the top page.
+      // frameUrl here must be lastKnownHref (the CURRENT url), not the outer
+      // `frameUrl` const — that's captured once at content-script injection
+      // and never updated, so on an SPA video swap (no re-injection, e.g.
+      // YouTube's "up next") it goes stale. A guest's setDescriptor handler
+      // filters on an exact frameUrl match against its own (fresh) location,
+      // so a stale value here made it bail out silently forever.
       chrome.runtime.sendMessage({
         event: "videoPicked",
         descriptor: computeDescriptor(el),
-        frameUrl,
+        frameUrl: lastKnownHref,
         duration: sendableDuration(el)
       });
     } else {
@@ -148,7 +154,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // No pageUrl here — background.js derives it from sender.tab.url. The
         // picked video can live in a non-top (even cross-origin) frame, which
         // can't always safely read the top page's own URL itself.
-        chrome.runtime.sendMessage({ event: "videoPicked", descriptor, frameUrl, duration: sendableDuration(el) });
+        // location.href (not the outer `frameUrl` const) — a re-pick after an
+        // in-page SPA navigation (no content-script re-injection) would
+        // otherwise report the page's original, now-stale, URL.
+        chrome.runtime.sendMessage({ event: "videoPicked", descriptor, frameUrl: location.href, duration: sendableDuration(el) });
       });
       sendResponse({ ok: true });
       return false;

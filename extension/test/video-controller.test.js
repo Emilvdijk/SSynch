@@ -55,6 +55,23 @@ test("onSourceChanged fires on loadstart, even when the guard is active (SPA reu
   assert.equal(sourceChangedCalls, 1, "a source change must be reported regardless of the echo guard");
 });
 
+test("a slow-to-settle remote seek is not echoed, even long after the old fixed guard window would have cleared", async () => {
+  const video = new FakeVideo();
+  const controller = new VideoController(video);
+  let seekedCalls = 0;
+  controller.on("seeked", () => seekedCalls++);
+
+  controller.applyRemote({ currentTime: 500 }); // e.g. jumping a fresh guest to the host's timestamp
+  await wait(200); // far past the old fixed 50ms guard — real unbuffered seeks can take this long or longer
+  video.fireSeeked(); // the browser's real `seeked` event, only now actually arriving
+  assert.equal(seekedCalls, 0, "the seek WE caused must not be reported as if the user did it");
+
+  await wait(70); // past the brief trailing guard that follows
+  video.currentTime = 600;
+  video.fireSeeked(); // a genuine, later, unrelated user seek
+  assert.equal(seekedCalls, 1, "a real seek afterward must still be reported");
+});
+
 test("applyRemote reports play() rejection via onPlayBlocked (autoplay policy)", async () => {
   const video = new FakeVideo();
   video.play = () => Promise.reject(new Error("NotAllowedError"));

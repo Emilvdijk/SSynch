@@ -30,6 +30,20 @@ const STYLES = `
   .dot.reconnecting { background: #eab308; }
   .role { font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; font-size: 11px; opacity: 0.9; }
   .code { margin-left: auto; opacity: 0.55; font-size: 11px; letter-spacing: 1px; }
+  .copy-btn {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0;
+  }
+  .copy-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
   .collapse-btn {
     flex: none;
     width: 22px;
@@ -132,6 +146,7 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
           <span class="dot" id="dot"></span>
           <span class="role" id="role"></span>
           <span class="code" id="code"></span>
+          <button class="copy-btn" id="copyBtn" title="Copy room code">⧉</button>
           <button class="collapse-btn" id="collapseBtn" title="Collapse">–</button>
         </div>
         <div class="status" id="status"></div>
@@ -152,6 +167,13 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     pill.addEventListener("click", () => {
       card.classList.remove("collapsed");
       pill.classList.remove("show");
+    });
+    shadow.getElementById("copyBtn").addEventListener("click", async () => {
+      const btn = shadow.getElementById("copyBtn");
+      await navigator.clipboard.writeText(shadow.getElementById("code").textContent);
+      const original = btn.textContent;
+      btn.textContent = "✓";
+      setTimeout(() => { btn.textContent = original; }, 1200);
     });
     shadow.getElementById("pickBtn").addEventListener("click", () => onPickVideo());
     shadow.getElementById("openHostBtn").addEventListener("click", () => onOpenHostPage());

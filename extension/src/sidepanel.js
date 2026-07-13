@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 const noRoom = $("noRoom");
 const inRoom = $("inRoom");
 const roomCode = $("roomCode");
+const copyCodeBtn = $("copyCodeBtn");
 const statusEl = $("status");
 const autoFollowRow = $("autoFollowRow");
 const autoFollowCheck = $("autoFollowCheck");
@@ -101,6 +102,13 @@ $("joinBtn").addEventListener("click", async () => {
 
 $("pickBtn").addEventListener("click", async () => {
   await chrome.runtime.sendMessage({ action: "pickVideo" });
+});
+
+copyCodeBtn.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(roomCode.textContent);
+  const original = copyCodeBtn.textContent;
+  copyCodeBtn.textContent = "✓";
+  setTimeout(() => { copyCodeBtn.textContent = original; }, 1200);
 });
 
 $("leaveBtn").addEventListener("click", async () => {

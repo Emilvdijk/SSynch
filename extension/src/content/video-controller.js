@@ -5,6 +5,14 @@
 // had just interacted with the video.
 
 const ECHO_GUARD_MS = 50;
+// Backstop only — normally the guard clears as soon as the seek it caused
+// actually completes (see _armSeekGuard). Real seeks to an unbuffered
+// position (e.g. jumping a fresh guest to the host's current timestamp)
+// can take far longer than a fixed short timer to finish; if the guard
+// cleared first, the resulting `seeked` event looked like a genuine user
+// seek, got reported and rebroadcast, and made every OTHER peer (including
+// the host) re-seek to ~that same spot — a spurious, visible jump.
+const SEEK_GUARD_MAX_MS = 8000;
 
 export class VideoController {
   /** @param {HTMLMediaElement} el */
@@ -64,11 +72,13 @@ export class VideoController {
   applyRemote({ play, currentTime, rate }) {
     this.isApplyingRemote = true;
 
+    let seekTarget = null;
     if (typeof rate === "number" && Math.abs(this.el.playbackRate - rate) > 0.001) {
       this.el.playbackRate = rate;
     }
     if (typeof currentTime === "number" && Math.abs(this.el.currentTime - currentTime) > 0.05) {
       this.el.currentTime = currentTime;
+      seekTarget = currentTime;
     }
     if (typeof play === "boolean") {
       if (play && this.el.paused) {
@@ -80,8 +90,11 @@ export class VideoController {
       if (!play && !this.el.paused) this.el.pause();
     }
 
-    // seeked/play/pause fire asynchronously; hold the guard a beat longer than one tick.
-    this._armGuard();
+    // A real seek needs its own (longer, event-driven) guard — see
+    // _armSeekGuard. play/pause/rate changes settle within a tick or two, so
+    // the fixed short timer is fine for those.
+    if (seekTarget !== null) this._armSeekGuard(seekTarget);
+    else this._armGuard();
   }
 
   /** Nudge playback rate for drift correction without it counting as a user ratechange. */
@@ -96,6 +109,7 @@ export class VideoController {
   // before a heartbeat nudge). Independent timers would let the earlier one
   // clear the guard early, opening a window for a genuine echo to slip through.
   _armGuard() {
+    this._clearSeekWait?.();
     if (this._guardTimer) clearTimeout(this._guardTimer);
     this._guardTimer = setTimeout(() => {
       this.isApplyingRemote = false;
@@ -103,7 +117,38 @@ export class VideoController {
     }, ECHO_GUARD_MS);
   }
 
+  // Waits for the `seeked` event our own currentTime assignment causes,
+  // however long that actually takes, instead of guessing with a timer.
+  // Falls back to SEEK_GUARD_MAX_MS in case it never fires (e.g. the browser
+  // decided no seek was actually needed for that delta).
+  _armSeekGuard(target) {
+    this._clearSeekWait?.();
+    if (this._guardTimer) clearTimeout(this._guardTimer);
+
+    const onSeeked = () => {
+      // Only release on OUR seek landing — a genuine user seek racing in
+      // while ours is still buffering would otherwise clear the guard early
+      // and let our own (still pending) seeked event slip through later as
+      // if it were the user's.
+      if (Math.abs(this.el.currentTime - target) > 0.5) return;
+      clear();
+      this._armGuard(); // brief trailing guard to also swallow immediate follow-up events
+    };
+    const timeout = setTimeout(() => {
+      clear();
+      this.isApplyingRemote = false;
+    }, SEEK_GUARD_MAX_MS);
+    const clear = () => {
+      this.el.removeEventListener("seeked", onSeeked);
+      clearTimeout(timeout);
+      this._clearSeekWait = null;
+    };
+    this._clearSeekWait = clear;
+    this.el.addEventListener("seeked", onSeeked);
+  }
+
   destroy() {
+    this._clearSeekWait?.();
     if (this._guardTimer) clearTimeout(this._guardTimer);
     this.el.removeEventListener("play", this._onPlay);
     this.el.removeEventListener("pause", this._onPause);

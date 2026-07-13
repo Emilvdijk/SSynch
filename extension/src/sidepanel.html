@@ -86,13 +86,25 @@
         color: #cfcfcf;
         white-space: pre-line;
       }
+      .room-code-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin: 4px 0 10px;
+      }
       #roomCode {
         font-size: 20px;
         font-weight: 600;
         letter-spacing: 2px;
-        text-align: center;
-        margin: 4px 0 10px;
         color: #fff;
+      }
+      #copyCodeBtn {
+        width: auto;
+        margin-bottom: 0;
+        padding: 4px 7px;
+        font-size: 13px;
+        color: #ccc;
       }
       label {
         display: flex;
@@ -136,7 +148,10 @@
     </section>
 
     <section id="inRoom" class="hidden">
-      <div id="roomCode"></div>
+      <div class="room-code-row">
+        <div id="roomCode"></div>
+        <button id="copyCodeBtn" title="Copy room code">⧉</button>
+      </div>
       <button id="pickBtn">Select video on this page</button>
       <label id="autoFollowRow" class="hidden">
         <input type="checkbox" id="autoFollowCheck" />
