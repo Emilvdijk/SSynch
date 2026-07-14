@@ -200,21 +200,59 @@ export function findNearestVideo(el) {
   let depth = 0;
   while (node && depth < MAX_ANCESTOR_SEARCH_DEPTH) {
     if (node.tagName === "VIDEO") return node;
-    const found = findVideoInSubtree(node);
-    if (found) return found;
+    const found = collectVideosInSubtree(node);
+    if (found.length > 0) return pickPlausibleCandidate(found, el);
     node = node.parentElement;
     depth++;
   }
   return null;
 }
 
-function findVideoInSubtree(root) {
-  if (root.tagName === "VIDEO") return root;
-  const children = root.children || [];
-  for (const child of children) {
-    const found = findVideoInSubtree(child);
-    if (found) return found;
+function collectVideosInSubtree(root, out = []) {
+  if (root.tagName === "VIDEO") {
+    out.push(root);
+    return out;
   }
-  if (root.shadowRoot) return findVideoInSubtree(root.shadowRoot);
-  return null;
+  const children = root.children || [];
+  for (const child of children) collectVideosInSubtree(child, out);
+  if (root.shadowRoot) collectVideosInSubtree(root.shadowRoot, out);
+  return out;
+}
+
+// Some custom players keep an empty, never-hydrated native <video> tag around
+// alongside the real one — e.g. a no-JS/SEO fallback with a blank <source> —
+// confirmed directly on a site where the click-catcher's own container held
+// exactly that alongside the real player, one level deeper. readyState === 0
+// with no currentSrc is a reliable tell that a candidate is that decoy, not
+// the one actually playing (autoDetectVideo already filters on this).
+function pickPlausibleCandidate(videos, referenceEl) {
+  if (videos.length === 1) return videos[0];
+  const loaded = videos.filter((v) => v.readyState > 0 || v.currentSrc);
+  const pool = loaded.length > 0 ? loaded : videos;
+  if (pool.length === 1) return pool[0];
+  return closestToElement(pool, referenceEl);
+}
+
+// Among several equally-plausible candidates (e.g. the real video plus a
+// suggested/preview clip both loaded within the same searched ancestor),
+// prefer whichever is geometrically closest to the clicked element instead
+// of just the first one encountered in document order.
+function closestToElement(videos, referenceEl) {
+  if (typeof referenceEl?.getBoundingClientRect !== "function") return videos[0];
+  const ref = referenceEl.getBoundingClientRect();
+  const refX = (ref.left + ref.right) / 2;
+  const refY = (ref.top + ref.bottom) / 2;
+
+  let best = videos[0];
+  let bestDist = Infinity;
+  for (const v of videos) {
+    if (typeof v.getBoundingClientRect !== "function") continue;
+    const r = v.getBoundingClientRect();
+    const dist = Math.hypot((r.left + r.right) / 2 - refX, (r.top + r.bottom) / 2 - refY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = v;
+    }
+  }
+  return best;
 }

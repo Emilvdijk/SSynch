@@ -49,13 +49,29 @@ export function findKnownVideo() {
  * layout (`visibility:hidden`/`display:none`/`opacity:0` all still report a
  * non-zero bounding rect, which a raw width*height check would miss).
  */
-function visibleArea(el) {
+export function visibleArea(el) {
   const rect = el.getBoundingClientRect();
   const style = getComputedStyle(el);
   if (style.visibility === "hidden" || style.display === "none" || parseFloat(style.opacity) === 0) return 0;
   const width = Math.max(0, Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0));
   const height = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0));
   return width * height;
+}
+
+/**
+ * True if `a` and `b` (space-separated class-list strings) share at least
+ * one class name. Used to check a resolved video against the class list the
+ * host reported at pick time — an identity signal, not just structural
+ * position, for pages with several candidate videos (e.g. autoplaying
+ * suggested/preview clips alongside the real one).
+ */
+export function classesOverlap(a, b) {
+  if (!a || !b) return false;
+  const setA = new Set(String(a).trim().split(/\s+/).filter(Boolean));
+  for (const c of String(b).trim().split(/\s+/)) {
+    if (c && setA.has(c)) return true;
+  }
+  return false;
 }
 
 /** Auto-detect: a known site selector first, else the most visible loaded video on the page. */

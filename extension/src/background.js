@@ -130,7 +130,9 @@ function connect() {
         type: MessageType.SET_VIDEO,
         descriptor: session.descriptor,
         frameUrl: session.frameUrl,
-        pageUrl: session.pageUrl
+        pageUrl: session.pageUrl,
+        duration: session.duration,
+        className: session.className
       });
     }
     session.connected = true;
@@ -248,6 +250,7 @@ function handleServerMessage(msg) {
       session.frameUrl = msg.frameUrl;
       session.pageUrl = msg.pageUrl;
       session.duration = msg.duration ?? null;
+      session.className = msg.className ?? null;
       session.videoResolved = null; // pending: this frame hasn't tried resolving it yet
       session.awaitingPlayback = false; // fresh attempt — reset until/unless the quick retries below exhaust
       // Cached so a later resolve (e.g. a fresh page load after auto-follow
@@ -347,22 +350,25 @@ async function ensureGuestOnPage(sync) {
     return;
   }
 
-  resolveOnTab(session.tabId, sync.descriptor, sync.frameUrl, sync.duration);
+  resolveOnTab(session.tabId, sync.descriptor, sync.frameUrl, sync.duration, sync.className);
 }
 
-function resolveOnTab(tabId, descriptor, frameUrl, duration) {
+function resolveOnTab(tabId, descriptor, frameUrl, duration, className) {
   // frameId omitted: broadcast to every frame in the tab. Only the frame whose
   // location matches frameUrl will actually resolve (content.js self-filters).
   // lastKnownState rides along so the guest lands at the host's actual
   // position instead of wherever their freshly (re)loaded video happens to
   // start; duration lets it fall back to a duration match if the structural
-  // descriptor fails (see findVideoByDuration in video-detector.js).
+  // descriptor fails (see findVideoByDuration in video-detector.js); className
+  // lets it disambiguate among several candidate videos on the page (see the
+  // "setDescriptor" handler in content.js).
   sendToTab(tabId, {
     cmd: "setDescriptor",
     descriptor,
     frameUrl,
     initialState: session.lastKnownState || null,
-    duration: duration ?? session.duration ?? null
+    duration: duration ?? session.duration ?? null,
+    className: className ?? session.className ?? null
   });
 }
 
@@ -479,9 +485,17 @@ function handleContentMessage(msg, sender) {
       // geo.dailymotion.com, a different origin from the page itself).
       session.pageUrl = sender.tab.url;
       session.duration = msg.duration ?? null;
+      session.className = msg.className ?? null;
       saveSession();
       if (session.role === Role.HOST) {
-        sendToServer({ type: MessageType.SET_VIDEO, descriptor: msg.descriptor, frameUrl: msg.frameUrl, pageUrl: session.pageUrl, duration: session.duration });
+        sendToServer({
+          type: MessageType.SET_VIDEO,
+          descriptor: msg.descriptor,
+          frameUrl: msg.frameUrl,
+          pageUrl: session.pageUrl,
+          duration: session.duration,
+          className: session.className
+        });
       }
       // enterPickMode went to every frame in the tab; tell the others to stand down.
       sendToTab(sender.tab.id, { cmd: "cancelPickMode" });

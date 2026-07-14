@@ -1,7 +1,7 @@
 // Piece 1-2-11 entry point: runs in every frame (all_frames: true). Finds the
 // video, lets the user pick one, and relays play/pause/seek/heartbeat to the
 // service worker, which owns the actual WebSocket connection (Piece 3/9).
-import { autoDetectVideo, computeDescriptor, findVideoByDuration, observeDeep, resolveDescriptor, watchForReplacement } from "./content/video-detector.js";
+import { autoDetectVideo, classesOverlap, computeDescriptor, findAllVideos, findVideoByDuration, observeDeep, resolveDescriptor, visibleArea, watchForReplacement } from "./content/video-detector.js";
 import { pickVideo, cancelPickMode } from "./content/element-picker.js";
 import { VideoController } from "./content/video-controller.js";
 import { AdGuard, ClockOffset, compensatedTime, reconcileDrift, startHeartbeat } from "./content/sync-engine.js";
@@ -45,6 +45,13 @@ let overlay = null;
 // metadata fires), used as a secondary matching signal on the resolving side.
 function sendableDuration(el) {
   return Number.isFinite(el.duration) && el.duration > 0 ? el.duration : null;
+}
+
+// The picked element's own class list, sent alongside the descriptor as an
+// identity signal — real players near-universally give their main video a
+// distinguishing class, unlike interchangeable structural nth-of-type paths.
+function sendableClassName(el) {
+  return el.className || null;
 }
 
 // Announce on every injection (including after a guest navigates to follow
@@ -102,7 +109,8 @@ function attach(el, asHost) {
         event: "videoPicked",
         descriptor: computeDescriptor(el),
         frameUrl: lastKnownHref,
-        duration: sendableDuration(el)
+        duration: sendableDuration(el),
+        className: sendableClassName(el)
       });
     } else {
       // Not the host: this is either a guest's resolved video changing under
@@ -172,7 +180,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // location.href (not the outer `frameUrl` const) — a re-pick after an
         // in-page SPA navigation (no content-script re-injection) would
         // otherwise report the page's original, now-stale, URL.
-        chrome.runtime.sendMessage({ event: "videoPicked", descriptor, frameUrl: location.href, duration: sendableDuration(el) });
+        chrome.runtime.sendMessage({ event: "videoPicked", descriptor, frameUrl: location.href, duration: sendableDuration(el), className: sendableClassName(el) });
       });
       sendResponse({ ok: true });
       return false;
@@ -201,6 +209,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const tryResolve = () => {
         let el = resolveDescriptor(msg.descriptor);
         let usedFallback = false;
+
+        // A structural match can land on the wrong (but structurally valid)
+        // video when the page has several candidates — e.g. autoplaying
+        // suggested/preview clips alongside the real one — whose relative
+        // sibling order isn't identical between the host's and this guest's
+        // copy of the page. Only worth second-guessing when real ambiguity
+        // exists; a single-video page can't have this problem.
+        if (el && findAllVideos().length > 1) {
+          // readyState/currentSrc excludes never-hydrated decoy <video> tags
+          // (e.g. a no-JS/SEO fallback with a blank <source>) from ever being
+          // proposed as "better" — same reasoning as autoDetectVideo's own filter.
+          const candidates = findAllVideos().filter((v) => v !== el && visibleArea(v) > 0 && (v.readyState > 0 || v.currentSrc));
+          // Identity signal: the host reported its video's class list —
+          // prefer a candidate that actually carries it when this match doesn't.
+          const classMatch = msg.className && !classesOverlap(el.className, msg.className)
+            ? candidates.find((v) => classesOverlap(v.className, msg.className))
+            : null;
+          // Autoplaying preview/suggested-video thumbnails are almost always
+          // muted — unmuted autoplay is blocked by every browser's autoplay
+          // policy — while whatever the user is actually watching usually isn't.
+          const unmutedAlternative = el.muted ? candidates.find((v) => !v.muted) : null;
+          const better = classMatch || unmutedAlternative;
+          if (better) {
+            el = better;
+            usedFallback = true;
+          }
+        }
+
         if (!el && msg.duration) {
           // Structural match failed but the host told us how long the video
           // is — closer signal than "just pick the biggest one" when there

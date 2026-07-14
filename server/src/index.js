@@ -78,10 +78,19 @@ export class Room {
 
       case "setVideo": {
         if (!this.isHost(ws)) break;
-        // duration rides along as a secondary matching signal for guests
-        // whose structural descriptor fails to resolve (see findVideoByDuration
-        // in the extension's video-detector.js) — optional, may be null.
-        const merged = { ...(this.loadState() || {}), descriptor: msg.descriptor, frameUrl: msg.frameUrl, pageUrl: msg.pageUrl, duration: msg.duration ?? null };
+        // duration and className ride along as secondary matching signals
+        // for guests whose structural descriptor fails to resolve, or
+        // resolves ambiguously among several candidates on the page (see
+        // findVideoByDuration/classesOverlap in the extension's
+        // video-detector.js) — both optional, may be null.
+        const merged = {
+          ...(this.loadState() || {}),
+          descriptor: msg.descriptor,
+          frameUrl: msg.frameUrl,
+          pageUrl: msg.pageUrl,
+          duration: msg.duration ?? null,
+          className: msg.className ?? null
+        };
         this.saveState(merged);
         this.broadcast({ type: "sync", ...merged }, ws);
         break;
@@ -92,7 +101,7 @@ export class Room {
         // drop the stale descriptor/frameUrl/pageUrl so guests (and a freshly
         // (re)connecting client) don't get pointed at a dead page.
         if (!this.isHost(ws)) break;
-        const merged = { ...(this.loadState() || {}), descriptor: null, frameUrl: null, pageUrl: null, duration: null };
+        const merged = { ...(this.loadState() || {}), descriptor: null, frameUrl: null, pageUrl: null, duration: null, className: null };
         this.saveState(merged);
         this.broadcast({ type: "sync", ...merged }, ws);
         break;

@@ -47,3 +47,31 @@ test("findNearestVideo returns null when nothing is within the search depth", ()
   const lonely = makeNode("DIV");
   assert.equal(findNearestVideo(lonely), null);
 });
+
+test("findNearestVideo skips a never-hydrated decoy <video> (readyState 0, no currentSrc) in favor of a real, loaded one", () => {
+  // player > [clicked catcher, decoy <video> (empty <source>, unloaded), real <video>]
+  const decoy = makeNode("VIDEO");
+  decoy.readyState = 0;
+  decoy.currentSrc = "";
+  const real = makeNode("VIDEO");
+  real.readyState = 4;
+  real.currentSrc = "blob:https://example.com/abc";
+  const catcher = makeNode("DIV");
+  makeNode("DIV", [catcher, decoy, real]); // player
+
+  assert.equal(findNearestVideo(catcher), real);
+});
+
+test("findNearestVideo prefers the geometrically closest video when several loaded candidates are found together", () => {
+  const near = makeNode("VIDEO");
+  near.readyState = 4;
+  near.getBoundingClientRect = () => ({ left: 100, right: 200, top: 100, bottom: 200 });
+  const far = makeNode("VIDEO");
+  far.readyState = 4;
+  far.getBoundingClientRect = () => ({ left: 1000, right: 1100, top: 1000, bottom: 1100 });
+  const catcher = makeNode("DIV");
+  catcher.getBoundingClientRect = () => ({ left: 110, right: 190, top: 110, bottom: 190 });
+  makeNode("DIV", [catcher, far, near]); // player — far comes first in document order
+
+  assert.equal(findNearestVideo(catcher), near);
+});
