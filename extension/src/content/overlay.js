@@ -5,6 +5,9 @@
 // top frame (see content.js) — one overlay, one place, no duplicates.
 
 const HOST_ID = "__ssynch-overlay-host__";
+// Global (not per-site/room) — a dragged position is a UI preference the
+// user set once, not something tied to a particular page or room.
+const POSITION_STORAGE_KEY = "ssynchOverlayPosition";
 
 const STYLES = `
   :host { all: initial; }
@@ -24,7 +27,22 @@ const STYLES = `
   }
   .card.collapsed { display: none; }
   .row { display: flex; align-items: center; gap: 6px; }
-  .title-row { margin-bottom: 8px; }
+  .title-row {
+    /* Negative margins pull the row's box out to the card's own edges (its
+       top/left/right padding included) so the FULL top strip is draggable,
+       not just the row's own content width; the explicit width (matching
+       .card's own 230px) plus matching padding keeps the actual content
+       (dot/role/code/buttons) rendered at exactly the same position/width
+       as before — the negative margins alone would otherwise also eat into
+       the available content width, not just reposition the box. */
+    width: 230px;
+    margin: -12px -12px 8px -12px;
+    padding: 12px 12px 0 12px;
+    border-radius: 14px 14px 0 0;
+    cursor: grab;
+    user-select: none;
+  }
+  .title-row.dragging { cursor: grabbing; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b6b70; flex: none; }
   .dot.connected { background: #34d399; }
   .dot.reconnecting { background: #eab308; }
@@ -117,14 +135,103 @@ const STYLES = `
     color: #fff;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: grab;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     font-size: 16px;
+    user-select: none;
   }
   .pill.show { display: flex; }
+  .pill.dragging { cursor: grabbing; }
 `;
 
 const DRIFT_LABELS = { seek: "correcting…", nudge: "adjusting…", hold: "in sync" };
+
+/** Move `hostEl` to (left, top), clamped so it can't be dragged (or restored) off-screen. */
+function positionAt(hostEl, left, top) {
+  const width = hostEl.offsetWidth;
+  const height = hostEl.offsetHeight;
+  const maxLeft = Math.max(0, window.innerWidth - width);
+  const maxTop = Math.max(0, window.innerHeight - height);
+  const clampedLeft = Math.min(Math.max(0, left), maxLeft);
+  const clampedTop = Math.min(Math.max(0, top), maxTop);
+  Object.assign(hostEl.style, { left: `${clampedLeft}px`, top: `${clampedTop}px`, right: "auto", bottom: "auto" });
+}
+
+// A pointerdown that never moves past this is treated as a click, not a
+// drag — matters for the pill, which is both the drag handle AND has its
+// own "click to expand" behavior.
+const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * Drag-to-reposition via `handleEl` (the title row, or the collapsed pill).
+ * Bottom-right (the default corner) is exactly where a lot of players put
+ * their own fullscreen/settings/PiP controls, so a fixed spot inevitably
+ * gets in the way on some sites. The dragged position is remembered
+ * (chrome.storage.local) across pages/restarts.
+ *
+ * `onClick`, if given, fires instead of a drag when the pointer never moved
+ * past the threshold — used by the pill so dragging it doesn't also expand
+ * it, but a genuine click still does.
+ */
+function setUpDragging(hostEl, handleEl, { onClick } = {}) {
+  let pointerId = null;
+  let grabOffsetX = 0;
+  let grabOffsetY = 0;
+  let startX = 0;
+  let startY = 0;
+  let dragged = false;
+
+  handleEl.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return; // let the copy/collapse buttons handle their own clicks
+    const rect = hostEl.getBoundingClientRect();
+    grabOffsetX = e.clientX - rect.left;
+    grabOffsetY = e.clientY - rect.top;
+    startX = e.clientX;
+    startY = e.clientY;
+    dragged = false;
+    pointerId = e.pointerId;
+    // setPointerCapture can throw in edge cases (e.g. the pointer having
+    // already been released by the time this runs) — never let that abort
+    // the rest of the drag/click logic below.
+    try {
+      handleEl.setPointerCapture(pointerId);
+    } catch {
+      // no-op: the pointermove/pointerup listeners below don't depend on
+      // capture actually having been established, since they're already
+      // attached directly to handleEl.
+    }
+  });
+
+  handleEl.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pointerId) return;
+    if (!dragged && Math.hypot(e.clientX - startX, e.clientY - startY) > DRAG_THRESHOLD_PX) {
+      dragged = true;
+      handleEl.classList.add("dragging");
+    }
+    if (dragged) positionAt(hostEl, e.clientX - grabOffsetX, e.clientY - grabOffsetY);
+  });
+
+  const endDrag = (e) => {
+    if (e.pointerId !== pointerId) return;
+    // Same reasoning as setPointerCapture above — must not abort before the
+    // click/save logic below, which is the entire point of this handler.
+    try {
+      handleEl.releasePointerCapture(pointerId);
+    } catch {
+      // no-op
+    }
+    handleEl.classList.remove("dragging");
+    pointerId = null;
+    if (dragged) {
+      const rect = hostEl.getBoundingClientRect();
+      chrome.storage.local.set({ [POSITION_STORAGE_KEY]: { left: rect.left, top: rect.top } });
+    } else {
+      onClick?.();
+    }
+  };
+  handleEl.addEventListener("pointerup", endDrag);
+  handleEl.addEventListener("pointercancel", endDrag);
+}
 
 export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
   let hostEl = document.getElementById(HOST_ID);
@@ -142,7 +249,7 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     shadow.innerHTML = `
       <style>${STYLES}</style>
       <div class="card" id="card">
-        <div class="row title-row">
+        <div class="row title-row" id="titleRow">
           <span class="dot" id="dot"></span>
           <span class="role" id="role"></span>
           <span class="code" id="code"></span>
@@ -164,10 +271,6 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
       card.classList.add("collapsed");
       pill.classList.add("show");
     });
-    pill.addEventListener("click", () => {
-      card.classList.remove("collapsed");
-      pill.classList.remove("show");
-    });
     shadow.getElementById("copyBtn").addEventListener("click", async () => {
       const btn = shadow.getElementById("copyBtn");
       await navigator.clipboard.writeText(shadow.getElementById("code").textContent);
@@ -178,6 +281,18 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     shadow.getElementById("pickBtn").addEventListener("click", () => onPickVideo());
     shadow.getElementById("openHostBtn").addEventListener("click", () => onOpenHostPage());
     shadow.getElementById("leaveBtn").addEventListener("click", () => onLeaveRoom());
+
+    setUpDragging(hostEl, shadow.getElementById("titleRow"));
+    setUpDragging(hostEl, pill, {
+      onClick: () => {
+        card.classList.remove("collapsed");
+        pill.classList.remove("show");
+      }
+    });
+    chrome.storage.local.get(POSITION_STORAGE_KEY).then((stored) => {
+      const pos = stored[POSITION_STORAGE_KEY];
+      if (pos) positionAt(hostEl, pos.left, pos.top);
+    });
   }
 
   function update(session) {
