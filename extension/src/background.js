@@ -71,6 +71,20 @@ function sendToServer(message) {
   }
 }
 
+// Piggyback a clock-offset refresh on heartbeat traffic rather than a
+// standalone timer — heartbeats only flow while playing, so this inherits
+// the same "no traffic while paused" property that lets the Durable Object
+// hibernate. Called both when a heartbeat arrives (guests, reconciling
+// against the host) and when one is sent (the host itself — heartbeats are
+// host-only now, so the host would otherwise never trigger this via receipt).
+function maybeRefreshPingOffset() {
+  const now = Date.now();
+  if (now - lastPingAt > PING_REFRESH_MS) {
+    lastPingAt = now;
+    sendToServer({ type: MessageType.PING, t0: now });
+  }
+}
+
 // Strip only the hash fragment before comparing "is this the same page" —
 // fragments are near-universally scroll/UI state, not video identity, but
 // the query string is left intact since that's exactly where YouTube (?v=)
@@ -275,14 +289,7 @@ function handleServerMessage(msg) {
       if (session?.tabId != null) {
         sendToTab(session.tabId, { cmd: "applyHeartbeat", heartbeat: { currentTime: msg.currentTime, at: msg.at } }, session.frameId);
       }
-      // Piggyback a clock-offset refresh on heartbeats rather than a standalone
-      // timer — heartbeats only flow while playing, so this inherits the same
-      // "no traffic while paused" property that lets the Durable Object hibernate.
-      const now = Date.now();
-      if (now - lastPingAt > PING_REFRESH_MS) {
-        lastPingAt = now;
-        sendToServer({ type: MessageType.PING, t0: now });
-      }
+      maybeRefreshPingOffset();
       break;
     }
 
@@ -514,7 +521,10 @@ function handleContentMessage(msg, sender) {
     }
 
     case "heartbeat": {
+      // Host-only (see content.js) — only sent when this session is actually
+      // the host, so it's safe to unconditionally refresh here too.
       sendToServer({ type: MessageType.HEARTBEAT, currentTime: msg.heartbeat.currentTime, at: msg.heartbeat.at });
+      maybeRefreshPingOffset();
       break;
     }
 

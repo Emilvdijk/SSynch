@@ -120,10 +120,16 @@ export class Room {
       }
 
       case "heartbeat": {
-        // Not persisted: heartbeats are only useful live, and skipping the
-        // write keeps a playing room cheap. A freshly (re)connecting client
-        // just gets the last saved `state` instead of the latest heartbeat.
-        // Symmetric like `state` above — whoever is currently playing drives it.
+        // Host-only, unlike `state` above: heartbeats drive continuous
+        // drift-correction (reconcileDrift), and only the host's position
+        // should ever be authoritative for that — a guest's own stalls/lag
+        // would otherwise drag the host (and every other guest) off a
+        // correctly-synced position. Explicit play/pause/seek stays symmetric
+        // via `state`; this gate is specifically about the periodic nudge/seek
+        // loop. Not persisted: heartbeats are only useful live, and skipping
+        // the write keeps a playing room cheap — a freshly (re)connecting
+        // client just gets the last saved `state` instead.
+        if (!this.isHost(ws)) break;
         this.broadcast({ type: "heartbeat", currentTime: msg.currentTime, at: msg.at }, ws);
         break;
       }

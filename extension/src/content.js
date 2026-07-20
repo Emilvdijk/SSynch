@@ -59,9 +59,13 @@ function sendableClassName(el) {
 // has actually loaded, instead of racing chrome.tabs.update's return value.
 chrome.runtime.sendMessage({ event: "contentScriptReady" });
 
-// Playback control (play/pause/seek/heartbeat reporting) is symmetric —
-// both host and guest wire it up the same way. `asHost` only still matters
-// for onSourceChanged below: picking WHICH video the room watches stays
+// Explicit play/pause/seek reporting is symmetric — both host and guest wire
+// it up the same way, and either can drive playback. Continuous heartbeat
+// drift-correction is NOT: only the host sends heartbeats (gated below), so
+// only the host's position is ever authoritative for reconcileDrift — a
+// guest's own stalls/lag would otherwise drag the host (and everyone else)
+// off a correctly-synced position. `asHost` also still matters for
+// onSourceChanged below: picking WHICH video the room watches stays
 // host-exclusive, even though controlling playback of it doesn't. It's
 // passed explicitly by whichever caller already knows the role (background.js
 // knows session.role synchronously) rather than via a follow-up message
@@ -128,6 +132,10 @@ function attach(el, asHost) {
   controller.on("seeked", (state) => reportLocalState(state));
   controller.on("ratechange", (state) => reportLocalState(state));
   stopHeartbeat = startHeartbeat(controller, 2000, (heartbeat) => {
+    // Host-only — see the comment above attach(). A guest's own local video
+    // still ticks this callback (harmless no-op) since startHeartbeat is
+    // wired up identically for both roles; it just never reports.
+    if (!asHost) return;
     if (!canReport) return; // not yet given the host's real position — nothing legitimate to report
     // Each viewer's ad is independently served/timed — broadcasting position
     // during one seeks everyone else into a meaningless spot on whatever

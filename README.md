@@ -127,12 +127,23 @@ All 12 pieces are implemented:
   start position, and heartbeat-driven drift correction (hard-seek past 1s,
   rate-nudge between 0.1-1s, hold under 0.1s). Heartbeats only fire while
   playing, both to save the free-tier compute budget and because there's
-  nothing to correct while paused.
+  nothing to correct while paused. **Heartbeats are host-only**: only the
+  host's position is ever authoritative for this continuous drift-correction
+  loop (gated both client-side in [content.js](extension/src/content.js) and
+  server-side via `isHost(ws)` in
+  [server/src/index.js](server/src/index.js)) — a guest's own local stalls/lag
+  would otherwise drag the host (and every other guest) off a correctly-synced
+  position, which showed up as visible re-seeking every ~2s on an otherwise
+  fine host. The host's own outgoing heartbeat also piggybacks the periodic
+  clock-offset refresh (previously only piggybacked on receiving one), so the
+  host doesn't lose recalibration now that it no longer receives heartbeats.
 - **Symmetric control:** any connected peer — host or guest — can play/pause/seek;
-  the server relays `state`/`heartbeat` from anyone (see [server/src/index.js](server/src/index.js)),
+  the server relays `state` from anyone (see [server/src/index.js](server/src/index.js)),
   and last-writer-wins naturally via the existing timestamp/broadcast ordering —
-  no separate conflict resolution needed. Picking *which* video the room
-  watches stays host-exclusive (`setVideo`/`clearVideo` are still gated).
+  no separate conflict resolution needed. This is distinct from heartbeats
+  (above): explicit actions stay symmetric, continuous drift-correction doesn't.
+  Picking *which* video the room watches stays host-exclusive (`setVideo`/`clearVideo`
+  are still gated).
 - **Robustness (options 1-3):** guest resolution falls back to best-effort
   auto-detect when the structural descriptor fails to match, and retries over
   ~2.6s to cover late-hydrating SPAs, instead of one attempt and giving up
