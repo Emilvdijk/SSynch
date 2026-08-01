@@ -132,7 +132,9 @@ const STYLES = `
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     border: 1px solid rgba(255, 255, 255, 0.09);
-    color: #fff;
+    /* Same off-white as the icon's play triangle — this sits on top of a
+       playing video in a dark room, so a pure-white glyph glares. */
+    color: #e6ded4;
     align-items: center;
     justify-content: center;
     cursor: grab;

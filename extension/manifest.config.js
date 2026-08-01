@@ -11,6 +11,15 @@ export default defineManifest({
   // room has no traffic and therefore nothing left to ever bring it back.
   permissions: ["alarms", "scripting", "storage", "sidePanel", "tabs"],
   host_permissions: ["<all_urls>"],
+  // Rasterised from assets/*.svg into public/icons/, so these paths are
+  // dist-relative. 16 and 32 come from icon-small.svg — the detailed geometry
+  // turns to mush that small; see the comment at the top of that file.
+  icons: {
+    16: "icons/icon-16.png",
+    32: "icons/icon-32.png",
+    48: "icons/icon-48.png",
+    128: "icons/icon-128.png"
+  },
   background: {
     service_worker: "src/background.js",
     type: "module"
@@ -28,6 +37,12 @@ export default defineManifest({
   ],
   action: {
     default_title: "SSynch",
+    default_icon: {
+      16: "icons/icon-16.png",
+      32: "icons/icon-32.png",
+      48: "icons/icon-48.png",
+      128: "icons/icon-128.png"
+    },
     // Same file as side_panel.default_path below — identical content/dark
     // styling on purpose, no duplication. Setting this makes clicking the
     // toolbar icon show a floating popup (from ANY tab) instead of nothing —

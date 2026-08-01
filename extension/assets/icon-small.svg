@@ -1,0 +1,35 @@
+<!--
+  16px/32px variant of assets/icon.svg. Same idea, coarser: the full-size
+  geometry turns to mush below ~24px because the ring stroke lands on ~1.5
+  device pixels and the 40-degree gaps close up under antialiasing. Here the
+  stroke is 19/128 and the gaps are 56 degrees, so both the break in the ring
+  and the arrowheads survive the downscale. Keep the two files in visual
+  agreement — same palette, same silhouette, same direction of rotation.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="ring" x1="14" y1="14" x2="114" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c07a35"/>
+      <stop offset="1" stop-color="#94500e"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="64" cy="64" r="64" fill="#131316"/>
+
+  <g fill="url(#ring)">
+    <!-- lower arc, clockwise from 28deg to 152deg -->
+    <path d="M101.084 83.718A42 42 0 0 1 26.916 83.718" fill="none"
+          stroke="url(#ring)" stroke-width="16" stroke-linecap="butt"/>
+    <polygon points="17.996,66.942 13.672,90.760 40.160,76.676"/>
+
+    <!-- upper arc, the same shape rotated 180deg -->
+    <path d="M26.916 44.282A42 42 0 0 1 101.084 44.282" fill="none"
+          stroke="url(#ring)" stroke-width="16" stroke-linecap="butt"/>
+    <polygon points="110.004,61.058 114.328,37.240 87.840,51.324"/>
+  </g>
+
+  <!-- Sharp corners on purpose: a rounded join eats the tip at 16px. Sized to
+       nearly fill the ring's bore, because a smaller triangle antialiases down
+       to a grey smudge instead of a white arrow. -->
+  <path d="M53 41 L53 87 L93 64 Z" fill="#e6ded4"/>
+</svg>

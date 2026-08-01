@@ -245,6 +245,45 @@ above exists to prevent. The host pushes; it doesn't pull.
   was never reproduced or re-verified after the change, so treat it as open until someone
   actually checks.
 
+## Icons (2026-08-01)
+
+- **Two source SVGs, not one.** `extension/assets/icon.svg` drives 48/128;
+  `extension/assets/icon-small.svg` drives 16/32. This looks like duplication and isn't:
+  the detailed geometry (13/128 stroke, 40° gaps between the two sync arcs) rasterises to
+  a solid blue disc at 16px — the gaps close under antialiasing and the arrowheads vanish
+  entirely, which is exactly the part that distinguishes this from a generic play button.
+  The small variant uses a 16/128 stroke, 56° gaps, and a triangle sized to nearly fill
+  the ring's bore, because a smaller triangle antialiases to a grey smudge rather than a
+  white arrow. Both were checked by rasterising and inspecting at 16× nearest-neighbour
+  zoom, not by eyeballing the vector. **Don't consolidate them into one file** without
+  redoing that check.
+- **The PNGs are committed; there is no icon build step.** They were rasterised once by
+  loading each SVG in a browser and drawing it to a canvas — no `sharp`/`resvg` dependency
+  was added for something that regenerates roughly never, and none of `magick`,
+  `inkscape`, or `rsvg-convert` exists on this machine anyway. Each size is rasterised at
+  its own intrinsic size (the SVG's `width`/`height` are rewritten per size) rather than
+  downscaled from one big bitmap, which is why the small sizes stay crisp.
+- Runtime icons live in `extension/public/icons/` so vite copies them to `dist/icons/`;
+  the manifest paths are therefore dist-relative. `assets/` is deliberately *outside*
+  `public/` so the SVG sources and the store-listing icon don't get shipped in the
+  packaged extension.
+- `assets/store-icon-128.png` is the Web Store listing icon and is a different crop on
+  purpose: the same art at 96×96 centred in a 128×128 canvas with transparent padding,
+  which is what the Store dashboard expects. The manifest's 128 is full-bleed.
+- **Burnt amber arrows on a circular dark disc, not blue on a rounded square** — the
+  user's call, on the grounds that the square tile read as dull. The amber deliberately
+  does *not* match the side panel's `#4f8cff` accent; the icon is the only place the
+  extension is seen next to other extensions' icons, so standing out beats matching the
+  UI. The disc is full-bleed (`r=64`) with transparent corners, which also means the icon
+  carries no visible edge against a dark Chrome toolbar — that's intended, not a
+  rendering bug.
+- **The palette is deliberately dark and low-glare** (`#c07a35 → #94500e` arrows, `#e6ded4`
+  triangle rather than `#ffffff`): this gets used in a darkened room next to a playing
+  video, so a bright icon is actively unpleasant. Chosen from a rendered four-way
+  comparison, one step brighter than the darkest option that still held its shape at 16px.
+  **Don't "improve contrast" by brightening it** — the dimness is the requirement, and the
+  16px legibility ceiling was already tested at the chosen value.
+
 ## Deployment
 
 - Cloudflare Worker is deployed (`ssynch.emilvdijk.workers.dev`); `SERVER_HOST` in

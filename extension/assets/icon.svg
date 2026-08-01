@@ -1,0 +1,38 @@
+<!--
+  Source of truth for every extension icon. The PNGs under public/icons/ are
+  rasterised from this file by tools/build-icons.mjs — edit here, never there.
+
+  Geometry notes (viewBox is 128x128, centre 64,64, ring radius 43):
+  the two arcs each span 140 degrees, leaving 40-degree gaps at the 190- and
+  10-o'clock positions for the arrowheads to sit in. Arrowhead tips run along
+  the tangent, base corners along the radius, so they read as part of the ring
+  rather than as bolted-on triangles. Stroke is deliberately heavy (13/128) so
+  the ring survives being scaled down to 16px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="ring" x1="14" y1="14" x2="114" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c07a35"/>
+      <stop offset="1" stop-color="#94500e"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="64" cy="64" r="64" fill="#131316"/>
+
+  <g fill="url(#ring)">
+    <!-- upper-left arc, sweeping clockwise from 30deg to 170deg -->
+    <path d="M101.239 85.5A43 43 0 0 1 21.653 71.467" fill="none"
+          stroke="url(#ring)" stroke-width="13" stroke-linecap="butt"/>
+    <polygon points="18.875,55.710 8.850,73.724 34.456,69.210"/>
+
+    <!-- lower-right arc, the same shape rotated 180deg -->
+    <path d="M26.761 42.5A43 43 0 0 1 106.347 56.533" fill="none"
+          stroke="url(#ring)" stroke-width="13" stroke-linecap="butt"/>
+    <polygon points="109.125,72.290 119.150,54.276 93.544,58.790"/>
+  </g>
+
+  <!-- Warm off-white rather than #fff: against the muted arrows a pure-white
+       triangle reads as a glare spot, which is the opposite of the point. -->
+  <path d="M55 45.5 L55 82.5 L87 64 Z" fill="#e6ded4"
+        stroke="#e6ded4" stroke-width="6" stroke-linejoin="round"/>
+</svg>
