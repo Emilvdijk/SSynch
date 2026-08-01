@@ -284,6 +284,32 @@ above exists to prevent. The host pushes; it doesn't pull.
   **Don't "improve contrast" by brightening it** — the dimness is the requirement, and the
   16px legibility ceiling was already tested at the chosen value.
 
+## Room state expires after 24 hours (2026-08-01)
+
+- Saved room state used to live forever. It exists for exactly one reason — so a
+  late joiner or a client reconnecting after a dropped connection lands at the right
+  place in the right video — and that stops being useful long before a day is out.
+  Keeping it indefinitely meant the last page a room watched stayed on disk under a
+  guessable six-character code, a privacy cost with no matching benefit. `ROOM_TTL_MS`
+  in `server/src/index.js` is now 24h, re-armed on every `saveState()` so the countdown
+  measures time since last *use*, not since creation.
+- **The DO alarm re-arms instead of deleting when peers are still connected.** This
+  isn't belt-and-braces, it's load-bearing: heartbeats are deliberately not persisted
+  (see the authority-model section), so a room paused for a day with everyone still
+  watching writes nothing at all and would otherwise expire out from under them.
+- **`alarm()` re-creates the table after `deleteAll()`.** `deleteAll()` drops the `kv`
+  table, and the DO can stay in memory to serve the next connection on that room code —
+  without `ensureSchema()` the next `saveState()` throws on a missing table. Both this
+  and the point above are covered by the live test described below; neither is
+  reachable by reading the code alone.
+- Verified against `wrangler dev` with `ROOM_TTL_MS` temporarily set to 3s, covering
+  four cases: expired room serves no stale state, live room still resumes a late joiner,
+  occupied-but-idle room survives its window, and a room code is reusable after expiry.
+  **If you change the expiry logic, re-run that** — the test lives only in the session
+  scratchpad, so re-create it from these four cases rather than trusting a read-through.
+- `PRIVACY.md` states the 24 hours as a promise to users, so the constant and the policy
+  have to move together. The promise is only true where the Worker is actually deployed.
+
 ## Deployment
 
 - Cloudflare Worker is deployed (`ssynch.emilvdijk.workers.dev`); `SERVER_HOST` in

@@ -9,7 +9,7 @@ export default defineManifest({
   // "alarms": the only thing that can wake this service worker on its own once
   // MV3 evicts it — see KEEPALIVE_ALARM in background.js. Without it a paused
   // room has no traffic and therefore nothing left to ever bring it back.
-  permissions: ["alarms", "scripting", "storage", "sidePanel", "tabs"],
+  permissions: ["alarms", "storage", "sidePanel", "tabs"],
   host_permissions: ["<all_urls>"],
   // Rasterised from assets/*.svg into public/icons/, so these paths are
   // dist-relative. 16 and 32 come from icon-small.svg — the detailed geometry

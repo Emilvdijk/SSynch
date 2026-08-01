@@ -18,11 +18,41 @@ export default {
   }
 };
 
+// How long room state may sit untouched before it's erased. Saved state exists
+// for exactly one reason — so a late joiner or a client reconnecting after a
+// dropped connection lands at the right place in the right video — and that
+// stops being useful long before a day is out. Keeping it forever means the
+// last page a room watched stays on disk indefinitely under a guessable
+// six-character code, which is a privacy cost with no matching benefit. A day
+// is comfortably longer than any real reconnect and short enough to state
+// plainly in PRIVACY.md.
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+
 export class Room {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+    this.ensureSchema();
+  }
+
+  ensureSchema() {
     this.state.storage.sql.exec("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)");
+  }
+
+  // Fires when the room has gone ROOM_TTL_MS without a state write. Peers still
+  // being connected means the room is alive but quiet (paused, or just nobody
+  // seeking) — heartbeats deliberately aren't persisted, so a long paused
+  // session writes nothing at all and would otherwise expire out from under
+  // people who are still watching.
+  async alarm() {
+    if (this.state.getWebSockets().length > 0) {
+      this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+      return;
+    }
+    await this.state.storage.deleteAll();
+    // deleteAll() takes the table with it, and this object may well stay in
+    // memory to serve the next connection on this room code.
+    this.ensureSchema();
   }
 
   async fetch(request) {
@@ -173,6 +203,9 @@ export class Room {
 
   saveState(state) {
     this.state.storage.sql.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('state', ?)", JSON.stringify(state));
+    // Push expiry back on every write, so the countdown measures time since the
+    // room was last *used*, not since it was created.
+    this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
   }
 
   loadState() {
