@@ -7,7 +7,6 @@ import { VideoController } from "./content/video-controller.js";
 import { AdGuard, ClockOffset, compensatedTime, reconcileDrift, startHeartbeat } from "./content/sync-engine.js";
 import { createOverlay } from "./content/overlay.js";
 
-const frameUrl = location.href;
 const isTopFrame = window === window.top;
 
 // A guest's resolve attempt on late-hydrating SPAs (nothing there yet on the
@@ -119,8 +118,12 @@ function attach(el, asHost) {
     } else {
       // Not the host: this is either a guest's resolved video changing under
       // it, or an unrelated video — either way, stop applying/reporting on it.
+      // navigated:true tells background.js not to bother re-resolving the old
+      // descriptor here — this frame is on a different URL now, so there's
+      // nothing on it left to recover (unlike a player simply swapping its
+      // own <video> out on the same page, which IS recoverable).
       detach();
-      chrome.runtime.sendMessage({ event: "videoLost" });
+      chrome.runtime.sendMessage({ event: "videoLost", navigated: true });
     }
   };
 
@@ -210,8 +213,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
 
     case "setDescriptor": {
-      // Guest side only — resolving the host's descriptor onto this frame's video.
-      if (msg.frameUrl !== frameUrl) return false;
+      // Resolving the room's descriptor onto this frame's video. Usually a
+      // guest, but the host takes this path too when re-attaching to its OWN
+      // video after losing it (page/frame reload, or the player swapping the
+      // element out) — see the "contentScriptReady"/"videoLost" handlers in
+      // background.js.
+      // location.href, not a value captured at injection time: on an SPA
+      // navigation this frame's URL changes without re-injection, and a stale
+      // captured copy made this guard silently reject forever (same class of
+      // bug as the frameUrl one fixed in onSourceChanged above).
+      if (msg.frameUrl !== location.href) return false;
       cancelPendingResolve(); // a fresh descriptor supersedes anything still being watched for
 
       const tryResolve = () => {
@@ -263,14 +274,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       };
 
       const onFound = (el, usedFallback) => {
-        attach(el, false);
+        const asHost = !!msg.asHost;
+        attach(el, asHost);
         // Land at the host's actual position before allowing this guest to
         // report anything — joining should mean "join the host at his
         // spot," not "everyone jumps to wherever my fresh page happened to
         // start." If there's genuinely nothing to sync to yet (a brand new
         // room, host hasn't pressed play), there's nothing to apply, and
         // canReport still opens up immediately below.
-        if (msg.initialState) {
+        // A host re-attaching to its own video skips this entirely: it IS the
+        // authority, so the room's last remembered position is just a staler
+        // copy of where it already is — applying it would seek the host (and
+        // therefore, via the echo of that seek, everyone else) backwards.
+        if (!asHost && msg.initialState) {
           const currentTime = compensatedTime(
             { currentTime: msg.initialState.currentTime, play: msg.initialState.play, at: msg.initialState.at },
             clockOffset
@@ -337,6 +353,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else {
         sendResponse({ ok: false });
       }
+      return false;
+    }
+
+    case "reportState": {
+      // The host re-asserting its true current position after (re)connecting —
+      // see socket.onopen in background.js. Deliberately reads the element
+      // live rather than anything cached, and goes out through the normal
+      // reporting path so the ad guard still applies.
+      if (controller && canReport) reportLocalState(controller.getState());
+      sendResponse({ ok: !!controller });
       return false;
     }
 

@@ -146,6 +146,53 @@ const STYLES = `
 
 const DRIFT_LABELS = { seek: "correcting…", nudge: "adjusting…", hold: "in sync" };
 
+/**
+ * While fullscreen is active the browser renders ONLY the fullscreen element's
+ * own subtree, so an overlay parked on <html> simply vanishes — precisely when
+ * it matters most: a movie is playing, the side panel can't be open, and a
+ * silently broken sync (video lost, reconnecting, drifting) has no other way
+ * to announce itself.
+ *
+ * Re-parenting into the fullscreen element doesn't generalise — players
+ * fullscreen a bare <video> or a cross-origin <iframe> about as often as a
+ * container div, and neither renders child content. The top layer DOES paint
+ * above fullscreen content, and a manual popover is the way to opt into it
+ * without a modal <dialog>'s focus trapping and page-blocking backdrop.
+ *
+ * The attribute is added only while fullscreen and removed after, so nothing
+ * about normal (windowed) behaviour changes — notably the UA's
+ * `[popover]:not(:popover-open) { display: none }` rule never gets a chance to
+ * hide the overlay, and neither do the rest of the UA popover styles (inset,
+ * margin, border, padding), which `:host { all: initial }` already neutralises.
+ */
+export function syncFullscreenLayer(hostEl) {
+  const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const isPopover = hostEl.hasAttribute("popover");
+
+  if (isFullscreen && !isPopover) {
+    hostEl.setAttribute("popover", "manual");
+    try {
+      hostEl.showPopover();
+    } catch {
+      // No popover support (or it refused) — back the attribute out rather
+      // than leaving the element stuck behind the UA's display:none rule.
+      hostEl.removeAttribute("popover");
+    }
+  } else if (!isFullscreen && isPopover) {
+    try {
+      hostEl.hidePopover();
+    } catch {
+      // Already hidden — the attribute removal below is what actually matters.
+    }
+    hostEl.removeAttribute("popover");
+    // Leaving fullscreen shrinks the viewport, which can strand a position
+    // that was perfectly on-screen a moment ago. Only meaningful once the
+    // overlay has actually been dragged (positionAt switches it to left/top).
+    const rect = hostEl.getBoundingClientRect();
+    if (hostEl.style.left && hostEl.style.left !== "auto") positionAt(hostEl, rect.left, rect.top);
+  }
+}
+
 /** Move `hostEl` to (left, top), clamped so it can't be dragged (or restored) off-screen. */
 function positionAt(hostEl, left, top) {
   const width = hostEl.offsetWidth;
@@ -243,7 +290,18 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     if (hostEl) hostEl.remove(); // stale non-shadow leftover, shouldn't normally happen
     hostEl = document.createElement("div");
     hostEl.id = HOST_ID;
-    Object.assign(hostEl.style, { position: "fixed", bottom: "16px", right: "16px", zIndex: "2147483647" });
+    // top/left pinned to auto explicitly: the UA's popover styles set
+    // `inset: 0`, and while `:host { all: initial }` already overrides that,
+    // an inline value is what actually guarantees the default (undragged)
+    // corner placement survives being promoted to the top layer.
+    Object.assign(hostEl.style, {
+      position: "fixed",
+      top: "auto",
+      left: "auto",
+      bottom: "16px",
+      right: "16px",
+      zIndex: "2147483647"
+    });
     document.documentElement.appendChild(hostEl);
     shadow = hostEl.attachShadow({ mode: "open" });
     shadow.innerHTML = `
@@ -336,7 +394,24 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     shadow.getElementById("status").textContent = lines.join("\n");
   }
 
+  // Wired up outside the creation branch above so an overlay that reused an
+  // existing host element still gets it, and re-checked immediately in case
+  // this was created while already fullscreen.
+  const onFullscreenChange = () => syncFullscreenLayer(hostEl);
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+  syncFullscreenLayer(hostEl);
+
   function destroy() {
+    document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+    if (hostEl.hasAttribute("popover")) {
+      try {
+        hostEl.hidePopover();
+      } catch {
+        // Never let this stop the element from actually being removed below.
+      }
+    }
     hostEl.remove();
   }
 

@@ -6,7 +6,10 @@ export default defineManifest({
   name: "SSynch",
   version: pkg.version,
   description: "Watch any video in sync with other people, in real time.",
-  permissions: ["scripting", "storage", "sidePanel", "tabs"],
+  // "alarms": the only thing that can wake this service worker on its own once
+  // MV3 evicts it — see KEEPALIVE_ALARM in background.js. Without it a paused
+  // room has no traffic and therefore nothing left to ever bring it back.
+  permissions: ["alarms", "scripting", "storage", "sidePanel", "tabs"],
   host_permissions: ["<all_urls>"],
   background: {
     service_worker: "src/background.js",

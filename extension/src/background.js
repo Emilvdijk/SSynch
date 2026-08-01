@@ -11,6 +11,24 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 const PING_REFRESH_MS = 30000;
 
+// A paused room otherwise produces literally zero traffic: heartbeats stop on
+// pause (see startHeartbeat), and maybeRefreshPingOffset is only reachable from
+// heartbeat paths — so nothing pings, nothing is received, and both the service
+// worker (evicted after ~30s idle) and the WebSocket (idle-dropped by
+// Cloudflare's edge or any NAT in the path) quietly die with nothing left to
+// ever wake them. The only thing that used to prevent this was the side panel's
+// own 2s status poll, which is a side effect rather than a design — and it's
+// absent exactly when it matters, since the side panel can't be open while a
+// video is fullscreen.
+//
+// This does NOT keep the worker continuously alive, and it can't: a WebSocket
+// cannot outlive the worker that owns it, and a 30s alarm against a 30s idle
+// timeout is a race, not a heartbeat. What it does guarantee is a wake-up, so a
+// dropped room recovers within ~30s instead of staying dead indefinitely.
+// 30s (0.5 min) is the floor chrome.alarms will honour.
+const KEEPALIVE_ALARM = "ssynch-keepalive";
+const KEEPALIVE_PERIOD_MINUTES = 0.5;
+
 /** @type {WebSocket | null} */
 let socket = null;
 let reconnectAttempts = 0;
@@ -32,6 +50,19 @@ async function loadSession() {
 async function saveSession() {
   if (session) await chrome.storage.session.set({ session });
   else await chrome.storage.session.remove("session");
+}
+
+// Alarms are owned by the browser, not by this worker, so one created here
+// survives the eviction it exists to recover from. Re-creating an alarm that
+// already exists resets its schedule, though — a worker that restarts often
+// would otherwise keep pushing the next fire out and never actually tick.
+async function ensureKeepalive() {
+  const existing = await chrome.alarms.get(KEEPALIVE_ALARM);
+  if (!existing) chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: KEEPALIVE_PERIOD_MINUTES });
+}
+
+function stopKeepalive() {
+  chrome.alarms.clear(KEEPALIVE_ALARM);
 }
 
 function makeRoomCode(length = 6) {
@@ -148,6 +179,16 @@ function connect() {
         duration: session.duration,
         className: session.className
       });
+      // Re-assert where the host actually is right now. Nothing else does:
+      // hello only replies with `sync` to guests, and the room's saved state is
+      // whatever it was before the drop — so anything the host did while
+      // disconnected (or during a pause long enough to evict this worker) was
+      // simply lost, leaving the host convinced it was in sync when it wasn't.
+      // Asked of the content script rather than replayed from a cached value
+      // on purpose: a remembered position with an old `at` would be
+      // latency-compensated forward by however long the gap was, which is
+      // exactly how a peer ends up seeked past the end of the video.
+      if (session.tabId != null) sendToTab(session.tabId, { cmd: "reportState" }, session.frameId);
     }
     session.connected = true;
     session.lastError = null;
@@ -238,6 +279,7 @@ function disconnect() {
 async function leaveRoom() {
   const tabId = session?.tabId;
   disconnect();
+  stopKeepalive();
   session = null;
   await saveSession();
   if (tabId != null) sendToTab(tabId, { cmd: "updateOverlay", session: null });
@@ -373,6 +415,11 @@ function resolveOnTab(tabId, descriptor, frameUrl, duration, className) {
     cmd: "setDescriptor",
     descriptor,
     frameUrl,
+    // The host re-resolves its OWN video through this same path when it loses
+    // it (reload, or the player swapping the element out). It must re-attach
+    // as the host — authoritative, heartbeat-sending, and NOT seeking itself
+    // to the room's last remembered position — not as a guest.
+    asHost: session.role === Role.HOST,
     initialState: session.lastKnownState || null,
     duration: duration ?? session.duration ?? null,
     className: className ?? session.className ?? null
@@ -395,6 +442,7 @@ async function handleUiMessage(msg, sendResponse) {
       session = { code: makeRoomCode(), role: Role.HOST, name: msg.name || "Host", connected: false, peers: 0, autoFollow: false };
       await saveSession();
       connect();
+      ensureKeepalive();
       sendResponse({ session });
       break;
     }
@@ -405,6 +453,7 @@ async function handleUiMessage(msg, sendResponse) {
       session = { code: msg.code.toUpperCase(), role: Role.GUEST, name: msg.name || "Guest", connected: false, peers: 0, autoFollow: msg.autoFollow !== false };
       await saveSession();
       connect();
+      ensureKeepalive();
       sendResponse({ session });
       break;
     }
@@ -538,6 +587,12 @@ function handleContentMessage(msg, sender) {
     case "resolved": {
       session.videoResolved = msg.ok;
       session.awaitingPlayback = false;
+      // Re-point applyState/applyHeartbeat at whichever frame actually holds
+      // the video now. Frame IDs are not stable across frame reloads, so the
+      // one captured at pick time goes stale the moment an embedded player
+      // reloads itself — after which every state/heartbeat was addressed to a
+      // frame that no longer exists and silently went nowhere.
+      if (msg.ok) session.frameId = sender.frameId;
       // Structural match failed but a best-effort (largest visible video)
       // fallback found something — likely right, but worth flagging so the
       // user knows to double-check rather than silently trusting it fully.
@@ -569,11 +624,21 @@ function handleContentMessage(msg, sender) {
     }
 
     case "contentScriptReady": {
-      // Fires on every (re)injection, including after a guest navigates to
-      // follow the host — this is what actually triggers resolution on the
-      // new page, instead of racing chrome.tabs.update's return value.
+      // Fires on every (re)injection: after a guest navigates to follow the
+      // host (this is what actually triggers resolution on the new page,
+      // instead of racing chrome.tabs.update's return value), but ALSO after
+      // any plain page/frame reload mid-session — which long-running players
+      // do on their own to refresh a playback token, and which fullscreen
+      // transitions can trigger on embedded ones.
+      //
+      // Deliberately NOT gated to guests any more. It used to be, which made
+      // any such reload permanently fatal for a host: the fresh content script
+      // came up with no controller, nothing ever called attach() again, and
+      // only a manual re-pick brought it back — while guests, who did get this
+      // path, silently recovered. That asymmetry is exactly what "the host
+      // lost control but the guests could still control each other" looks
+      // like from the outside.
       if (
-        session.role === Role.GUEST &&
         session.descriptor &&
         sender.tab.id === session.tabId &&
         sender.url === session.frameUrl
@@ -591,12 +656,39 @@ function handleContentMessage(msg, sender) {
     }
 
     case "videoLost": {
-      session.videoResolved = false;
       session.awaitingPlayback = false;
+
+      // The element went away — but on a long-running page that overwhelmingly
+      // means the player re-created or re-parented its own <video> (fullscreen
+      // transitions and periodic embed reloads both do), not that anyone left
+      // the page. Re-resolve the SAME descriptor first: content.js retries
+      // briefly and then watches indefinitely, so this covers a player that
+      // takes its time coming back too.
+      //
+      // The host used to skip straight to clearing here, which was terminal —
+      // the descriptor it would need in order to ever re-resolve was the very
+      // thing being thrown away, so the host dropped out of its own room for
+      // good with no way back except a manual re-pick. A host genuinely
+      // leaving is already covered by the tabs.onUpdated/onRemoved listeners
+      // below, which still clear properly.
+      //
+      // msg.navigated means this frame's URL actually changed under a guest
+      // (content.js's onSourceChanged) — a different page, so there's nothing
+      // here to recover and re-resolving would just be rejected by the
+      // frameUrl guard on the other end.
+      if (!msg.navigated && session.descriptor && session.frameUrl && session.tabId != null) {
+        session.videoResolved = null; // pending a re-resolve, not "gave up"
+        saveSession();
+        notifyUI({ videoLost: true });
+        resolveOnTab(session.tabId, session.descriptor, session.frameUrl);
+        break;
+      }
+
+      session.videoResolved = false;
       if (session.role === Role.HOST) {
-        // Genuinely gone (element removed), not just a source swap (that
-        // case re-announces instead) — drop the stale descriptor/pageUrl,
-        // mirroring the chrome.tabs.onUpdated staleness handling below.
+        // Genuinely gone with nothing left to re-resolve against — drop the
+        // stale descriptor/pageUrl, mirroring the chrome.tabs.onUpdated
+        // staleness handling below.
         session.descriptor = null;
         session.frameUrl = null;
         session.pageUrl = null;
@@ -632,10 +724,18 @@ function handleContentMessage(msg, sender) {
 // Wiring
 // ---------------------------------------------------------------------------
 
+// Started before any listener below references it. Every handler gates on THIS
+// rather than on `session` being populated: loadSession() is async, and the
+// event that wakes an evicted service worker is by definition the first one to
+// arrive — so an `if (!session) return;` guard dropped precisely the message
+// that mattered. From the user's side that looked like "I pressed play, nothing
+// happened, so I pressed it again."
+const ready = loadSession();
+
 // Host navigated away from the page their video was on, without re-picking —
 // drop the now-stale descriptor/pageUrl (both locally and on the server) so
 // "Open host's page" and guest resolution don't point at a dead page.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => ready.then(() => {
   if (!session || session.role !== Role.HOST) return;
   if (tabId !== session.tabId) return;
   if (!changeInfo.url || normalizePageUrl(changeInfo.url) === normalizePageUrl(session.pageUrl)) return;
@@ -648,14 +748,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   saveSession();
   notifyUI({});
   sendToServer({ type: MessageType.CLEAR_VIDEO });
-});
+}));
 
 // A guest has exactly one tab tracking the room — closing it means leaving,
 // not "wait for the host to eventually notice." A host closing their video
 // tab gets the same staleness cleanup as navigating away without re-picking
 // (the onUpdated listener above) — CLEAR_VIDEO, not leaving the room outright,
 // since the host's ROOM (the code, the connection) doesn't depend on one tab.
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener((tabId) => ready.then(() => {
   if (!session || tabId !== session.tabId) return;
 
   if (session.role === Role.GUEST) {
@@ -671,22 +771,45 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   saveSession();
   notifyUI({});
   sendToServer({ type: MessageType.CLEAR_VIDEO });
-});
+}));
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.tab) {
-    handleContentMessage(msg, sender);
+    ready.then(() => handleContentMessage(msg, sender));
     return false;
   }
   if (msg.action) {
-    handleUiMessage(msg, sendResponse);
+    ready.then(() => handleUiMessage(msg, sendResponse));
     return true; // keep the channel open for the async sendResponse
   }
   return false;
 });
 
+// The one thing guaranteed to wake this worker on its own — see KEEPALIVE_ALARM.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEPALIVE_ALARM) return;
+  ready.then(() => {
+    if (!session?.code) {
+      stopKeepalive(); // no room any more (e.g. the worker restarted after leaving)
+      return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      connect();
+      return;
+    }
+    // Connection's up: a ping keeps it from being idle-dropped AND refreshes
+    // the clock offset, which otherwise only happens on heartbeat traffic —
+    // i.e. never at all while the room is paused.
+    lastPingAt = Date.now();
+    sendToServer({ type: MessageType.PING, t0: lastPingAt });
+  });
+});
+
 // Re-establish the socket whenever the service worker (re)starts, using
 // whatever room identity survived in chrome.storage.session.
-loadSession().then(() => {
-  if (session?.code) connect();
+ready.then(() => {
+  if (session?.code) {
+    connect();
+    ensureKeepalive();
+  }
 });
