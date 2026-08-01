@@ -16,20 +16,24 @@
 
   <circle cx="64" cy="64" r="64" fill="#131316"/>
 
+  <!-- Arcs run 8 degrees past each arrowhead's base and end underneath it, so
+       the two shapes overlap instead of abutting — see the comment in icon.svg
+       for why abutting edges leave a dark hairline. -->
   <g fill="url(#ring)">
-    <!-- lower arc, clockwise from 28deg to 152deg -->
-    <path d="M101.084 83.718A42 42 0 0 1 26.916 83.718" fill="none"
+    <!-- lower arc, clockwise from 28deg to 160deg -->
+    <path d="M101.084 83.718A42 42 0 0 1 24.533 78.365" fill="none"
           stroke="url(#ring)" stroke-width="16" stroke-linecap="butt"/>
     <polygon points="17.996,66.942 13.672,90.760 40.160,76.676"/>
 
     <!-- upper arc, the same shape rotated 180deg -->
-    <path d="M26.916 44.282A42 42 0 0 1 101.084 44.282" fill="none"
+    <path d="M26.916 44.282A42 42 0 0 1 103.467 49.635" fill="none"
           stroke="url(#ring)" stroke-width="16" stroke-linecap="butt"/>
     <polygon points="110.004,61.058 114.328,37.240 87.840,51.324"/>
   </g>
 
   <!-- Sharp corners on purpose: a rounded join eats the tip at 16px. Sized to
        nearly fill the ring's bore, because a smaller triangle antialiases down
-       to a grey smudge instead of a white arrow. -->
-  <path d="M53 41 L53 87 L93 64 Z" fill="#e6ded4"/>
+       to a grey smudge instead of a white arrow. Shifted left of its own
+       bounding-box centre for the same optical reason as in icon.svg. -->
+  <path d="M48 41 L48 87 L88 64 Z" fill="#e6ded4"/>
 </svg>

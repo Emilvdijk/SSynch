@@ -139,9 +139,15 @@ const STYLES = `
     justify-content: center;
     cursor: grab;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    font-size: 16px;
     user-select: none;
   }
+  /* An inline triangle rather than the "▶" character. A glyph's ink sits
+     wherever the font puts it inside its em box, so flex-centering centers the
+     box and leaves the arrow visibly low and left — and which font even
+     resolves here depends on the host page. This is centered by construction:
+     y 1..13 in a 14 box, and x placed so the midpoint of (bounding-box center,
+     centroid) lands on 7, the same optical rule the extension icon uses. */
+  .pill svg { pointer-events: none; display: block; }
   .pill.show { display: flex; }
   .pill.dragging { cursor: grabbing; }
 `;
@@ -321,7 +327,11 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
         <button class="open-host-btn" id="openHostBtn">Open host's page</button>
         <button class="leave-btn" id="leaveBtn">Leave room</button>
       </div>
-      <div class="pill" id="pill" title="Expand">▶</div>
+      <div class="pill" id="pill" title="Expand">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+          <path d="M2.7 1 L2.7 13 L13 7 Z" fill="currentColor"/>
+        </svg>
+      </div>
     `;
 
     const card = shadow.getElementById("card");

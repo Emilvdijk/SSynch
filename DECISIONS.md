@@ -220,6 +220,15 @@ above exists to prevent. The host pushes; it doesn't pull.
   and an uncaught throw here was silently breaking the pill's click-to-expand path.
 - Card/pill background is `rgba(18, 18, 22, 0.78)` with `blur(4px)` (explicit
   user-specified values, was `0.88`/`10px` before 2026-07-14).
+- **The collapsed pill's play arrow is an inline `<svg>`, not the `▶` character**
+  (2026-08-01). Flex centering centers a glyph's *box*; where the ink sits inside that
+  box is up to the font, and which font resolves inside the shadow root depends on the
+  host page — so `▶` rendered visibly low and left, differently in different places.
+  The inline triangle is centered by construction and can't drift. It is placed slightly
+  right of where the glyph appeared but slightly *left* of its own bounding-box center,
+  the same optical rule the extension icon uses: a right-pointing triangle carries its
+  mass at the blunt end, so box-centering reads as shifted right. **Don't "simplify" it
+  back to a text glyph.**
 
 ## Known, diagnosed, unfixed issues
 

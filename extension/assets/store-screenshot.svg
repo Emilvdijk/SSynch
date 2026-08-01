@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="800" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15151a"/>
+      <stop offset="1" stop-color="#0b0b0e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="990" cy="440" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c07a35" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#c07a35" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="14" y1="14" x2="114" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c07a35"/>
+      <stop offset="1" stop-color="#94500e"/>
+    </linearGradient>
+    <style>
+      .h  { font-family: "Segoe UI", system-ui, sans-serif; fill: #f2f2f2; }
+      .m  { font-family: "Segoe UI", system-ui, sans-serif; fill: #9a9aa2; }
+      .ui { font-family: "Segoe UI", system-ui, sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <rect width="1280" height="800" fill="url(#glow)"/>
+
+  <!-- Everything below is nudged down as a block so the top and bottom
+       margins match; the background rects above stay full-bleed. -->
+  <g transform="translate(0,26)">
+
+  <!-- ============ brand ============ -->
+  <g transform="translate(72,52) scale(0.5625)">
+    <circle cx="64" cy="64" r="64" fill="#131316"/>
+    <g fill="url(#ring)">
+      <path d="M101.084 83.718A42 42 0 0 1 24.533 78.365" fill="none" stroke="url(#ring)" stroke-width="16"/>
+      <polygon points="17.996,66.942 13.672,90.760 40.160,76.676"/>
+      <path d="M26.916 44.282A42 42 0 0 1 103.467 49.635" fill="none" stroke="url(#ring)" stroke-width="16"/>
+      <polygon points="110.004,61.058 114.328,37.240 87.840,51.324"/>
+    </g>
+    <path d="M48 41 L48 87 L88 64 Z" fill="#e6ded4"/>
+  </g>
+  <text class="h" x="156" y="104" font-size="34" font-weight="600" letter-spacing="0.5">SSynch</text>
+
+  <!-- ============ headline ============ -->
+  <text class="h" x="72" y="212" font-size="46" font-weight="700">Watch together,</text>
+  <text class="h" x="72" y="266" font-size="46" font-weight="700">actually in sync.</text>
+  <text class="m" x="72" y="316" font-size="21">One person picks the video. Everyone else's player follows.</text>
+
+  <!-- ============ steps ============ -->
+  <g>
+    <circle cx="94" cy="386" r="21" fill="#c07a35" fill-opacity="0.18" stroke="#c07a35" stroke-opacity="0.5"/>
+    <text class="ui" x="94" y="394" font-size="20" font-weight="700" fill="#d9963f" text-anchor="middle">1</text>
+    <text class="h" x="140" y="382" font-size="24" font-weight="600">Create a room</text>
+    <text class="m" x="140" y="412" font-size="19">Click the SSynch icon, then Create room.</text>
+  </g>
+  <g>
+    <circle cx="94" cy="478" r="21" fill="#c07a35" fill-opacity="0.18" stroke="#c07a35" stroke-opacity="0.5"/>
+    <text class="ui" x="94" y="486" font-size="20" font-weight="700" fill="#d9963f" text-anchor="middle">2</text>
+    <text class="h" x="140" y="474" font-size="24" font-weight="600">Share the code</text>
+    <text class="m" x="140" y="504" font-size="19">Everyone else joins with those six characters.</text>
+  </g>
+  <g>
+    <circle cx="94" cy="570" r="21" fill="#c07a35" fill-opacity="0.18" stroke="#c07a35" stroke-opacity="0.5"/>
+    <text class="ui" x="94" y="578" font-size="20" font-weight="700" fill="#d9963f" text-anchor="middle">3</text>
+    <text class="h" x="140" y="566" font-size="24" font-weight="600">Pick the video</text>
+    <text class="m" x="140" y="596" font-size="19">Hit “Select video on this page”. Everyone lands on it.</text>
+  </g>
+  <g>
+    <circle cx="94" cy="662" r="21" fill="#c07a35" fill-opacity="0.18" stroke="#c07a35" stroke-opacity="0.5"/>
+    <text class="ui" x="94" y="670" font-size="20" font-weight="700" fill="#d9963f" text-anchor="middle">4</text>
+    <text class="h" x="140" y="658" font-size="24" font-weight="600">Just watch</text>
+    <text class="m" x="140" y="688" font-size="19">Play, pause and seek from any side. Drift corrects itself.</text>
+  </g>
+
+  <!-- ============ the overlay, at 2x ============ -->
+  <g>
+    <rect x="760" y="280" width="460" height="322" rx="28"
+          fill="#12121690" stroke="#ffffff" stroke-opacity="0.09" stroke-width="2"/>
+
+    <!-- title row -->
+    <circle cx="792" cy="326" r="8" fill="#34d399"/>
+    <text class="ui" x="814" y="334" font-size="21" font-weight="600" letter-spacing="0.4"
+          fill="#f2f2f2" fill-opacity="0.9">HOST</text>
+    <text class="ui" x="1090" y="334" font-size="21" letter-spacing="2"
+          fill="#f2f2f2" fill-opacity="0.55" text-anchor="end">68Q8G3</text>
+
+    <rect x="1104" y="308" width="36" height="36" rx="10" fill="#ffffff" fill-opacity="0.08"/>
+    <rect x="1112" y="315" width="15" height="17" rx="3" fill="none" stroke="#cccccc" stroke-width="2"/>
+    <rect x="1118" y="321" width="15" height="17" rx="3" fill="#17171b" stroke="#cccccc" stroke-width="2"/>
+
+    <rect x="1152" y="304" width="44" height="44" rx="12" fill="#ffffff" fill-opacity="0.08"/>
+    <line x1="1163" y1="326" x2="1185" y2="326" stroke="#cccccc" stroke-width="2.5" stroke-linecap="round"/>
+
+    <!-- status -->
+    <text class="ui" x="784" y="402" font-size="23" fill="#f2f2f2" fill-opacity="0.85">No video selected yet</text>
+    <text class="ui" x="784" y="434" font-size="23" fill="#f2f2f2" fill-opacity="0.85">1 watching</text>
+
+    <!-- buttons -->
+    <rect x="784" y="466" width="412" height="52" rx="16" fill="#ffffff" fill-opacity="0.08"/>
+    <text class="ui" x="990" y="499" font-size="23" fill="#ffffff" text-anchor="middle">Select video on this page</text>
+
+    <rect x="784" y="530" width="412" height="48" rx="16" fill="none"
+          stroke="#f0806a" stroke-opacity="0.35" stroke-width="2"/>
+    <text class="ui" x="990" y="561" font-size="23" fill="#f0806a" text-anchor="middle">Leave room</text>
+  </g>
+
+  <text class="m" x="990" y="652" font-size="19" text-anchor="middle">Sits on top of the video — drag it anywhere,</text>
+  <text class="m" x="990" y="680" font-size="19" text-anchor="middle">collapse it to a dot, and it stays put in fullscreen.</text>
+
+  </g>
+</svg>

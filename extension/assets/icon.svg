@@ -19,20 +19,33 @@
 
   <circle cx="64" cy="64" r="64" fill="#131316"/>
 
+  <!--
+    Each arc runs 6 degrees PAST the arrowhead's base and finishes underneath
+    it. Ending exactly at the base instead only makes the two shapes abut, and
+    two abutting edges each antialias against the background on their own — the
+    coverage doesn't sum back to opaque, so a dark hairline shows through. The
+    overlap is invisible (same gradient, and the stroke is narrower than the
+    triangle everywhere it's covered) and the seam goes away.
+  -->
   <g fill="url(#ring)">
-    <!-- upper-left arc, sweeping clockwise from 30deg to 170deg -->
-    <path d="M101.239 85.5A43 43 0 0 1 21.653 71.467" fill="none"
+    <!-- upper-left arc, sweeping clockwise from 30deg to 176deg -->
+    <path d="M101.239 85.5A43 43 0 0 1 21.105 67" fill="none"
           stroke="url(#ring)" stroke-width="13" stroke-linecap="butt"/>
     <polygon points="18.875,55.710 8.850,73.724 34.456,69.210"/>
 
     <!-- lower-right arc, the same shape rotated 180deg -->
-    <path d="M26.761 42.5A43 43 0 0 1 106.347 56.533" fill="none"
+    <path d="M26.761 42.5A43 43 0 0 1 106.895 61.001" fill="none"
           stroke="url(#ring)" stroke-width="13" stroke-linecap="butt"/>
     <polygon points="109.125,72.290 119.150,54.276 93.544,58.790"/>
   </g>
 
   <!-- Warm off-white rather than #fff: against the muted arrows a pure-white
-       triangle reads as a glare spot, which is the opposite of the point. -->
-  <path d="M55 45.5 L55 82.5 L87 64 Z" fill="#e6ded4"
+       triangle reads as a glare spot, which is the opposite of the point.
+
+       Sitting at x=51 rather than centred on its own bounding box: a
+       right-pointing triangle carries its visual weight at the blunt end, so
+       centring the box puts the mass right of centre and it reads as shifted.
+       Placed so the midpoint of (bounding-box centre, centroid) lands on 64. -->
+  <path d="M51 45.5 L51 82.5 L83 64 Z" fill="#e6ded4"
         stroke="#e6ded4" stroke-width="6" stroke-linejoin="round"/>
 </svg>

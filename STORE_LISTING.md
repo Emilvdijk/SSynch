@@ -116,36 +116,101 @@ Required, because the answers above declare data collection. Host `PRIVACY.md`
 at a stable public address and paste that address into the dashboard — GitHub
 Pages on this repo is the least-effort option that gives a real URL.
 
-## Store listing description
+## Short description
 
-> **Watch videos together, actually in sync.**
+The dashboard's summary field. Hard limit 132 characters; this is 106.
+
+> Watch videos together in sync. Create a room, share the code, and everyone's
+> player follows — on any site.
+
+## Detailed description
+
+Every claim below is one the extension actually delivers — the drift-correction
+and reconnect behaviour especially. Don't add capabilities here that aren't in
+the code; a listing that oversells is both a review risk and a refund magnet.
+
+> **Watch together, actually in sync.**
 >
-> One person creates a room and picks the video. Everyone else joins with the
-> room code, and their player follows along — play, pause, and seek from any
-> side, with continuous correction for the drift that builds up between browsers
-> over a two-hour film.
+> Starting a film "on three" never works. Someone's stream buffers, someone
+> pauses to get the door, and twenty minutes later everyone is a different
+> distance into the same film.
 >
-> - **Works on any site.** SSynch attaches to the video element itself rather
->   than to a hard-coded list of streaming services.
-> - **Nothing to sign up for.** No account, no email, no profile. Share a
->   six-character code and start.
-> - **Stays out of the way.** A small draggable widget shows who is connected
->   and whether you are in sync. Collapse it to a single button, and it stays
->   visible in fullscreen.
-> - **Survives real life.** Reconnects on its own after a dropped connection, a
->   page reload, or a long pause.
+> SSynch keeps every player on the same moment. One person creates a room and
+> picks the video; everyone else joins with a six-character code, and their
+> player follows.
 >
-> SSynch sends only the address of the page being shared and the playback
-> position. No page content, no analytics, no tracking. See the privacy policy
-> for the full list.
+> **How it works**
+>
+> 1. Click the SSynch icon and hit Create room.
+> 2. Share the six-character code with whoever is watching.
+> 3. Open your video and hit "Select video on this page". Everyone else's
+>    browser opens the same page and locks onto the same video.
+> 4. Watch. Play, pause and seek from any side — it applies to everyone.
+>
+> **What it does**
+>
+> ▸ **Works on any site.** SSynch attaches to the video player itself rather
+> than to a hard-coded list of streaming services, so it behaves the same on a
+> big streaming service, a self-hosted file, or a lecture recording.
+>
+> ▸ **Corrects drift as it goes.** No two browsers play at exactly the same
+> speed. Rather than only syncing when somebody clicks something, SSynch keeps
+> comparing positions and correcting — an imperceptible speed nudge for a small
+> gap, a seek for a large one — so you don't quietly drift apart over a
+> two-hour film.
+>
+> ▸ **Accounts for lag.** Playback positions are corrected for the round-trip
+> delay to the server, so joining late or jumping to a new scene doesn't leave
+> you a second behind everyone else.
+>
+> ▸ **Anyone can control it.** Pause to get the door, rewind for the line
+> nobody caught — every participant can, not just whoever started the room.
+>
+> ▸ **Stays out of the way.** A small widget shows who's connected and whether
+> you're in sync. Drag it anywhere, collapse it to a single button, and it
+> stays visible in fullscreen.
+>
+> ▸ **Survives real life.** It reconnects on its own after a dropped
+> connection, a page reload, or a long pause, and re-finds the video if the
+> player rebuilds itself mid-session.
+>
+> ▸ **Nothing to sign up for.** No account, no email, no profile. Generate a
+> code and go.
+>
+> **What you'll need**
+>
+> Everyone needs SSynch installed, and everyone needs their own access to
+> whatever you're watching. SSynch synchronises playback — it does not stream,
+> share, or re-broadcast video. If a site needs a subscription, each person
+> still needs their own.
+>
+> It works with standard HTML5 video players, which covers most of the web.
+> Some heavily customised players behave differently, and sites that block
+> extensions outright won't work.
+>
+> **Privacy**
+>
+> No accounts, no analytics, no tracking, no third parties. To keep a room in
+> sync, SSynch sends the address of the page the host shares, a description of
+> which video element to control, and the playback position. That's the whole
+> list — no page content, and nothing about any other page you visit. Room data
+> is deleted 24 hours after a room was last used. Full policy linked below.
 
 ## Assets
 
 | Asset | Status |
 |---|---|
 | Icon, 128×128 | `extension/assets/store-icon-128.png` |
-| Screenshots, 1280×800 or 640×400 | **Not made yet.** At least one is required. |
+| Screenshot, 1280×800 | `extension/assets/store-screenshot-1280x800.png` |
 | Small promo tile, 440×280 | Optional; only needed for homepage promotion. |
+
+The screenshot is drawn from `extension/assets/store-screenshot.svg`, not captured
+from a running browser — the overlay in it is redrawn at 2× from the real values in
+`overlay.js` (the same `rgba(18,18,22,0.78)` card, `#34d399` dot, `#f0806a` leave
+button). **If the overlay's styling changes, that SVG goes stale silently.** Re-render
+it by serving the SVG over HTTP and drawing it to a 1280×800 canvas; loading it from
+`file://` does not work, because the preview pane sandboxes local files with
+`script-src 'none'`.
 
 ## Before submitting
 
@@ -156,5 +221,5 @@ Pages on this repo is the least-effort option that gives a real URL.
 - [ ] Bump `version` in `extension/package.json`; `0.1.0` is what the manifest
       inherits and every Web Store upload needs a higher one than the last.
 - [ ] Host `PRIVACY.md` and have the URL ready.
-- [ ] Take at least one screenshot.
+- [x] Take at least one screenshot.
 - [ ] Expect a slow review. `<all_urls>` puts an extension into manual review.
