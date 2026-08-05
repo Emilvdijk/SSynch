@@ -153,6 +153,8 @@ cross-origin `<iframe>` about as often as a container div, and neither renders c
   only while the popover is open. Real fullscreen could not be exercised in the embedded
   browser pane (`requestFullscreen` → "Permissions check failed"), so the top-layer-above-
   fullscreen step itself rests on the spec, not on a local observation.
+- This is therefore unverified on **both** browsers, and Firefox is the likelier of the two
+  to diverge — see the Firefox build section below.
 
 ## Keeping a paused room alive (2026-08-01)
 
@@ -220,6 +222,26 @@ above exists to prevent. The host pushes; it doesn't pull.
   and an uncaught throw here was silently breaking the pill's click-to-expand path.
 - Card/pill background is `rgba(18, 18, 22, 0.78)` with `blur(4px)` (explicit
   user-specified values, was `0.88`/`10px` before 2026-07-14).
+- **The copy button uses `document.execCommand("copy")` as a fallback on purpose** (2026-08-06).
+  `navigator.clipboard` is `[SecureContext]`-gated and a content script inherits the *page's*
+  context, so on an `http://` page it is `undefined` — not merely unusable. That's not an
+  exotic case for this extension: a self-hosted Jellyfin/Plex box on the LAN is exactly the
+  sort of thing people watch together. The old code did a bare
+  `navigator.clipboard.writeText()` inside an `async` handler, so it threw into an unhandled
+  rejection and the button silently did nothing, forever, with no feedback anywhere.
+  `execCommand` is deprecated but is *not* secure-context gated, which is the entire reason
+  it's there — **don't remove it as dead legacy code.** Both paths failing now shows `✗`
+  rather than nothing. The side panel's own copy button never had this problem: extension
+  pages are always secure contexts.
+- The fallback's temporary `<textarea>` goes in the **shadow root**, and is positioned
+  off-screen rather than `display:none`/`visibility:hidden` — the latter make `select()` a
+  no-op and would silently break the only fallback there is. Shadow root rather than the page
+  because a focused form control's *own* selection drives the copy (not
+  `document.getSelection()`, which doesn't pierce shadow boundaries), so it works there — and
+  no page CSS can reach in and hide it.
+- The button's glyph is restored from a constant, not from whatever it was showing before the
+  copy. Reading the "original" back off the element meant a fast double-click captured `✓` as
+  the value to restore, leaving the button permanently ticked.
 - **The collapsed pill's play arrow is an inline `<svg>`, not the `▶` character**
   (2026-08-01). Flex centering centers a glyph's *box*; where the ink sits inside that
   box is up to the font, and which font resolves inside the shadow root depends on the
@@ -318,6 +340,104 @@ above exists to prevent. The host pushes; it doesn't pull.
   scratchpad, so re-create it from these four cases rather than trusting a read-through.
 - `PRIVACY.md` states the 24 hours as a promise to users, so the constant and the policy
   have to move together. The promise is only true where the Worker is actually deployed.
+
+## Firefox build (2026-08-05)
+
+Firefox support is a **manifest rewrite, not a second bundle**. `npm run build:firefox`
+runs the normal `vite build` and then `scripts/build-firefox.mjs` copies `dist/` to
+`dist-firefox/` with a transformed `manifest.json`. **No `.js` file differs between the
+two browsers.** That's only possible because of two things that were checked, not assumed:
+
+- `chrome.*` returns **promises** in Firefox MV3, so every `await chrome.storage.session.get()`
+  / `.then()` / `.catch()` in this codebase works unchanged. MDN's general "Chrome
+  incompatibilities" page says `chrome` = callbacks and `browser` = promises, which would
+  make the entire extension silently return `undefined` everywhere — that page just doesn't
+  cover the MV3 nuance. Firefox's own MV3 migration guide states the promise support
+  explicitly. **If a future port ever looks broken in exactly this way, that's the thing to
+  re-check first**, and the fix is one line (`const api = globalThis.browser ?? globalThis.chrome`),
+  not a rewrite.
+- crxjs's generated `service-worker-loader.js` is a **one-line ES module**
+  (`import './assets/background.js-<hash>.js'`), which loads as-is under Firefox's
+  `background: { scripts: [...], type: "module" }`. The build script reads that filename out
+  of the Chrome manifest rather than hardcoding it. If crxjs ever emits a genuinely
+  worker-specific loader (`importScripts`, `self.*`), this assumption breaks and Firefox
+  needs its own vite config.
+
+Other transform decisions:
+
+- **`strict_min_version: "127.0"`.** The floor is set by *permissions*, not by any API this
+  code calls. The individual APIs bottom out lower (112 event-page ES modules, 115
+  `storage.session`, 125 Popover), but before **127** `host_permissions`/`content_scripts`
+  matches were opt-in only rather than granted at install — meaning the content script, i.e.
+  all of SSynch, wouldn't run until the user hunted down the extensions button. Not worth
+  shipping. Don't lower this to widen support; it would widen it to users for whom the
+  extension does nothing.
+- **`side_panel` is dropped, not ported to `sidebar_action`.** They're incompatible APIs, and
+  the cost is near-zero: `action.default_popup` already points at the same `sidepanel.html`,
+  and in Chrome the toolbar icon opens that popup too (see the Icons/UI history). Firefox
+  users lose docking, not the UI. Nothing in `src/` calls `chrome.sidePanel.*`, which is why
+  removing the key needs no code change.
+- **`clipboardWrite` is added.** The overlay's copy-room-code button runs in a *content
+  script*; Chrome allows `navigator.clipboard.writeText` there off the click's user
+  activation alone, Firefox wants the permission declared.
+- **The add-on ID is `ssynch@emilvdijk.github.io`.** Mozilla never resolves the domain part
+  and it needn't be a real address, but the ID is permanent, public, and unchangeable after
+  publishing — so it names something we actually control (the GitHub repo, and the Pages site
+  that serves `PRIVACY.md`). A first draft used the Cloudflare `*.workers.dev` subdomain;
+  that's Cloudflare's shared free-tier domain, which would have permanently encoded a piece
+  of swappable hosting into the add-on's identity. **Don't change this once it's on AMO** —
+  a new ID is a new add-on, and existing users are never migrated to it.
+- **`data_collection_permissions: { required: ["browsingActivity", "websiteActivity"] }`.**
+  Required for new AMO submissions since 2025-11-03 and shown in Firefox's install prompt.
+  Chosen against Mozilla's own definitions and what `PRIVACY.md` already promises:
+  `browsingActivity` covers the shared `pageUrl`/`frameUrl`, `websiteActivity` covers
+  play/pause/seek and the position heartbeat. Deliberately **not** `technicalAndInteraction`
+  — that means device info, usage stats and crash reports, and SSynch has no telemetry.
+  Erring toward over-declaring on purpose: `PRIVACY.md` is maximally explicit, so a narrower
+  manifest claim would contradict a public promise. **These two documents have to move
+  together.**
+- The transform is a pure function (`scripts/firefox-manifest.mjs`) with the file I/O split
+  out, so it's unit-tested in `test/firefox-manifest.test.js` — including a check that every
+  declared data-collection category is a real one. A typo there is a compliance problem that
+  nothing else in the toolchain would catch.
+- **The transform fails on anything unreviewed, via an allowlist** (`REVIEWED_PERMISSIONS`,
+  `REVIEWED_MANIFEST_KEYS`). It only knows the manifest as it exists today; a Chrome-only
+  permission or key added to `manifest.config.js` later would otherwise pass straight through
+  into the Firefox build, with AMO's validator the first thing to notice — after upload.
+  An allowlist rather than a list of known-Chrome-only names on purpose: the point is to
+  catch what *wasn't* predictable when this was written. Widening either set is the explicit
+  "yes, I checked this one works in Firefox" step.
+- **`clipboardWrite` is belt-and-braces, not a requirement**, and the tempting assumption
+  ("Firefox needs it or the copy button breaks") is wrong: `writeText()` works from a content
+  script off transient activation alone, which the overlay's click handler has. It's kept
+  because it costs one prompt line and makes the button immune to the handler later growing
+  an `await` before the `writeText` call. Dropping it is defensible.
+
+Verified: `npx web-ext lint --source-dir dist-firefox` reports **0 errors, 0 notices**. The
+one remaining warning (`UNSAFE_VAR_ASSIGNMENT`, `innerHTML` in `overlay.js`) is pre-existing,
+ships in the Chrome build too, and is a static template — left alone rather than refactoring
+working overlay code as part of a port.
+
+**Not verified — two things that need a real Firefox, not a code read:**
+
+1. **The overlay's fullscreen top-layer promotion.** The `popover="manual"` + `showPopover()`
+   trick (see the fullscreen section above) is the most browser-specific code in the repo.
+   The spec position is that entering fullscreen *closes* open popovers, and showing one on
+   top of an already-fullscreen element is exactly the corner where implementations diverge;
+   no Firefox bug was found either confirming or denying it. Note the Chrome side was never
+   empirically confirmed either — it rests on the spec. The failure mode is graceful
+   (`showPopover()` throws → the attribute is backed out → the overlay is merely invisible in
+   fullscreen), so sync itself is unaffected.
+2. **Event-page eviction against the WebSocket.** Firefox's MV3 background is a non-persistent
+   *event page*, and MDN is explicit that `setTimeout` does **not** survive idling and that
+   message ports can't hold the page open. Nothing documents WebSockets doing so either, and
+   unlike Chrome (which since 116 resets the idle timer on WebSocket activity) Firefox offers
+   no such guarantee. The existing `KEEPALIVE_ALARM` design already handles this — alarms are
+   browser-owned, Firefox honours the same 30s floor, and playback generates constant
+   `runtime.sendMessage` traffic anyway. The exposure is `scheduleReconnect()`'s backoff
+   `setTimeout` being dropped mid-wait, which the alarm recovers within ~30s. **This is the
+   same bounded-recovery-not-prevention property documented above; don't "fix" it in Firefox
+   by assuming the socket holds the page open.**
 
 ## Deployment
 

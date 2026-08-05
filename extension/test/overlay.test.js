@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { syncFullscreenLayer } from "../src/content/overlay.js";
+import { copyText, syncFullscreenLayer } from "../src/content/overlay.js";
 
 /**
  * Minimal stand-in for the overlay's shadow-host <div>. Only the surface
@@ -87,6 +87,112 @@ test("a fullscreen <video> or cross-origin <iframe> is handled the same way (no 
     withFullscreen(fullscreenElement, () => syncFullscreenLayer(hostEl));
     assert.equal(hostEl.shown, 1, `${fullscreenElement.tagName} fullscreen should still promote the overlay`);
   }
+});
+
+/**
+ * Stubs the globals copyText touches. `clipboard: null` models a NON-SECURE
+ * context, where navigator.clipboard is genuinely absent rather than merely
+ * failing — that's the http:// case this whole path exists for.
+ */
+function withClipboardEnv({ clipboard, execCommandResult = true, execCommandThrows = false }, fn) {
+  // Node 21+ defines globalThis.navigator as a getter-only accessor, so plain
+  // assignment throws — descriptors are the only way to stub and restore it.
+  const saved = new Map();
+  const stub = (name, value) => {
+    saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+  };
+  const restore = () => {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else delete globalThis[name];
+    }
+  };
+
+  const created = [];
+  stub("navigator", clipboard ? { clipboard } : {});
+  stub("document", {
+    createElement: () => {
+      const el = {
+        style: {}, value: "", focused: 0, selected: 0, removed: 0,
+        focus() { this.focused++; },
+        select() { this.selected++; },
+        remove() { this.removed++; }
+      };
+      created.push(el);
+      return el;
+    },
+    execCommand: (cmd) => {
+      if (execCommandThrows) throw new Error("execCommand not allowed");
+      return cmd === "copy" ? execCommandResult : false;
+    }
+  });
+
+  const shadow = { appended: [], appendChild(el) { this.appended.push(el); } };
+  // copyText is async, so the globals have to stay stubbed until it settles —
+  // restoring in a sync finally would tear them down mid-await.
+  return Promise.resolve(fn(shadow, created)).finally(restore);
+}
+
+test("copies via the Clipboard API when the page is a secure context", async () => {
+  const written = [];
+  const result = await withClipboardEnv(
+    { clipboard: { writeText: async (t) => void written.push(t) } },
+    (shadow) => copyText("ABC123", shadow)
+  );
+  assert.equal(result, true);
+  assert.deepEqual(written, ["ABC123"]);
+});
+
+test("falls back to execCommand when navigator.clipboard is absent (http:// page)", async () => {
+  // The original bug: a bare navigator.clipboard.writeText() here threw
+  // TypeError into an unhandled rejection, and the button silently did nothing.
+  const [result, created] = await withClipboardEnv({ clipboard: null }, async (shadow, els) => [
+    await copyText("ABC123", shadow),
+    els
+  ]);
+  assert.equal(result, true, "the legacy path must actually run, not just avoid throwing");
+  assert.equal(created.length, 1);
+  assert.equal(created[0].value, "ABC123");
+  assert.equal(created[0].selected, 1, "select() is what execCommand('copy') acts on");
+});
+
+test("falls back when the Clipboard API exists but rejects", async () => {
+  // Document not focused, or permission denied.
+  const result = await withClipboardEnv(
+    { clipboard: { writeText: async () => { throw new DOMException("Document is not focused"); } } },
+    (shadow) => copyText("ABC123", shadow)
+  );
+  assert.equal(result, true, "a rejecting Clipboard API should still fall through to the legacy path");
+});
+
+test("reports failure instead of throwing when both paths fail", async () => {
+  for (const env of [{ clipboard: null, execCommandResult: false }, { clipboard: null, execCommandThrows: true }]) {
+    const result = await withClipboardEnv(env, (shadow) => copyText("ABC123", shadow));
+    assert.equal(result, false, "a total failure must be reported, so the button can show it");
+  }
+});
+
+test("the temporary textarea is always cleaned up, including when execCommand throws", async () => {
+  for (const env of [{ clipboard: null }, { clipboard: null, execCommandThrows: true }]) {
+    const created = await withClipboardEnv(env, async (shadow, els) => {
+      await copyText("ABC123", shadow);
+      return els;
+    });
+    assert.equal(created[0].removed, 1, "left behind, the textarea would accumulate in the shadow root on every click");
+  }
+});
+
+test("the temporary textarea is off-screen rather than hidden", async () => {
+  const created = await withClipboardEnv({ clipboard: null }, async (shadow, els) => {
+    await copyText("ABC123", shadow);
+    return els;
+  });
+  // display:none / visibility:hidden would make select() a no-op and silently
+  // break the only fallback there is.
+  assert.equal(created[0].style.display, undefined);
+  assert.equal(created[0].style.visibility, undefined);
+  assert.equal(created[0].style.position, "fixed");
 });
 
 test("exiting fullscreen re-clamps a dragged position into the now-smaller viewport", () => {

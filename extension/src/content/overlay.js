@@ -154,6 +154,68 @@ const STYLES = `
 
 const DRIFT_LABELS = { seek: "correcting…", nudge: "adjusting…", hold: "in sync" };
 
+// Kept as constants because the button's glyph is restored from here after a
+// copy, not from whatever it happened to be showing beforehand — reading the
+// "original" back off the element meant a fast double-click captured "✓" as
+// the thing to restore, leaving the button permanently ticked.
+const COPY_IDLE = "⧉";
+const COPY_OK = "✓";
+const COPY_FAIL = "✗";
+
+/**
+ * `document.execCommand("copy")` is deprecated, but unlike the Clipboard API it
+ * is **not gated on a secure context** — which is the only reason it's here.
+ *
+ * The textarea goes in the shadow root rather than on the page. A focused form
+ * control's own selection is what drives the copy (not `document.getSelection()`,
+ * which doesn't pierce shadow boundaries), so this works — and it means no page
+ * CSS can hide the element and quietly turn `select()` into a no-op.
+ *
+ * @returns {boolean} whether the copy actually happened
+ */
+function legacyCopy(text, shadow) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  // Off-screen, NOT display:none/visibility:hidden — those make select() a no-op.
+  Object.assign(textarea.style, { position: "fixed", top: "-1000px", opacity: "0" });
+  shadow.appendChild(textarea);
+  try {
+    textarea.focus();
+    textarea.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+/**
+ * Copy `text`, falling back when the Clipboard API isn't available.
+ *
+ * `navigator.clipboard` is `[SecureContext]`-gated, and a content script
+ * inherits the *page's* context — so on an `http://` page it is `undefined`,
+ * not merely unusable. The realistic case isn't obscure: a self-hosted
+ * Jellyfin/Plex box on the LAN is exactly the kind of thing people watch
+ * together. Before this, the optional chain below was a bare property access
+ * inside an `async` handler, so it threw into an unhandled rejection and the
+ * button did nothing at all, with no feedback anywhere.
+ *
+ * @returns {Promise<boolean>} whether the copy actually happened
+ */
+export async function copyText(text, shadow) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Present but refused — an unfocused document or a denied permission both
+    // land here. Worth trying the legacy path rather than giving up.
+  }
+  return legacyCopy(text, shadow);
+}
+
 /**
  * While fullscreen is active the browser renders ONLY the fullscreen element's
  * own subtree, so an overlay parked on <html> simply vanishes — precisely when
@@ -319,7 +381,7 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
           <span class="dot" id="dot"></span>
           <span class="role" id="role"></span>
           <span class="code" id="code"></span>
-          <button class="copy-btn" id="copyBtn" title="Copy room code">⧉</button>
+          <button class="copy-btn" id="copyBtn" title="Copy room code">${COPY_IDLE}</button>
           <button class="collapse-btn" id="collapseBtn" title="Collapse">–</button>
         </div>
         <div class="status" id="status"></div>
@@ -343,10 +405,15 @@ export function createOverlay({ onPickVideo, onOpenHostPage, onLeaveRoom }) {
     });
     shadow.getElementById("copyBtn").addEventListener("click", async () => {
       const btn = shadow.getElementById("copyBtn");
-      await navigator.clipboard.writeText(shadow.getElementById("code").textContent);
-      const original = btn.textContent;
-      btn.textContent = "✓";
-      setTimeout(() => { btn.textContent = original; }, 1200);
+      const copied = await copyText(shadow.getElementById("code").textContent, shadow);
+      // A failed copy is a nuisance, not a loss — the code is six characters and
+      // is displayed right next to this button. What it must not be is silent.
+      btn.textContent = copied ? COPY_OK : COPY_FAIL;
+      btn.title = copied ? "Copied" : "Couldn't copy — select the code and copy it manually";
+      setTimeout(() => {
+        btn.textContent = COPY_IDLE;
+        btn.title = "Copy room code";
+      }, 1200);
     });
     shadow.getElementById("pickBtn").addEventListener("click", () => onPickVideo());
     shadow.getElementById("openHostBtn").addEventListener("click", () => onOpenHostPage());

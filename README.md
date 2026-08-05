@@ -1,11 +1,14 @@
 # SSynch
 
-A Chrome extension that syncs `<video>` playback across people watching the same
+A browser extension that syncs `<video>` playback across people watching the same
 thing, backed by a Cloudflare Worker + Durable Object on the free plan. Built per
 [video-sync-extension-plan.md](video-sync-extension-plan.md).
 
+Runs on **Chrome and Firefox** from one codebase — the JavaScript is identical,
+only the manifest differs (see [Firefox](#1b-run-it-in-firefox) below).
+
 ```
-extension/   Chrome MV3 extension (Vite + @crxjs/vite-plugin, plain JS)
+extension/   MV3 extension (Vite + @crxjs/vite-plugin, plain JS)
 server/      Cloudflare Worker + Room Durable Object (wrangler)
 ```
 
@@ -30,6 +33,49 @@ This starts Vite in watch mode and writes to `extension/dist`. Load it in Chrome
 At this point (Pieces 0-2) you can open the side panel, and — once a room exists —
 pick a video and see play/pause/seek detected. The room/sync features need the
 server below.
+
+## 1b. Run it in Firefox
+
+```
+cd extension
+npm run build:firefox
+```
+
+That runs `vite build` and then rewrites the manifest into `extension/dist-firefox/`.
+Both builds coexist — `dist/` stays valid for Chrome, so you can have the extension
+loaded in both browsers at once. Load it:
+
+1. Go to `about:debugging#/runtime/this-firefox`
+2. "Load Temporary Add-on…" → select `extension/dist-firefox/manifest.json`
+3. Re-run the build and click "Reload" after each change
+
+Temporary add-ons are removed when Firefox closes, and need no signing. To validate
+the package the way AMO will:
+
+```
+npx web-ext@8 lint --source-dir dist-firefox
+```
+
+Pinned to the major version this was verified against (0 errors, 0 notices). The one
+remaining warning, `UNSAFE_VAR_ASSIGNMENT` on `innerHTML` in `overlay.js`, is
+pre-existing and ships in the Chrome build too.
+
+**Differences from the Chrome build** (all manifest-level; no JS differs):
+
+- **No side panel.** Firefox has no equivalent API (`sidebar_action` is a different,
+  incompatible one), so the toolbar icon opens the same UI as a popup — which is what
+  clicking the icon does in Chrome anyway. Firefox users just can't dock it.
+- **Firefox 127+ only.** Below that, `host_permissions` were opt-in rather than granted
+  at install, so the content script — i.e. all of SSynch — wouldn't run until the user
+  found the extensions button and granted access per site.
+- **Site access can be revoked per-site** via Firefox's extensions button at any time,
+  and permissions added in an *update* are not re-prompted. Expect the occasional "it
+  stopped working on site X" with no error shown anywhere.
+- Publishing to [addons.mozilla.org](https://addons.mozilla.org) needs a free account
+  (no fee, unlike Chrome's one-off $5). The add-on ID in
+  [scripts/firefox-manifest.mjs](extension/scripts/firefox-manifest.mjs) is permanent
+  once published — changing it later creates a *different* add-on that existing users
+  never migrate to.
 
 ## 2. Stand up the backend
 
