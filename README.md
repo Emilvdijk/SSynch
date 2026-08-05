@@ -265,3 +265,13 @@ All 12 pieces are implemented:
   destination page (e.g. YouTube) can autoplay on load before any `state`
   message arrives to correct it. Possible fix: have the guest's tab start
   muted/paused by default until the first real `state`/`sync` is applied.
+
+## License
+
+Source is public for transparency; all rights reserved. Ask if you'd like to
+reuse it.
+
+There is no `LICENSE` file, which under default copyright means exactly that.
+The build and deploy steps above are documented so you can see how the thing is
+put together and verify what it does — not as a grant of permission to
+redistribute it.

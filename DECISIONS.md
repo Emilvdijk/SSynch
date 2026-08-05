@@ -450,6 +450,23 @@ working overlay code as part of a port.
   negotiates — this shows up as a curl TLS failure that has nothing to do with the
   server. Verify deployed endpoints with Node's native `fetch`/`WebSocket` instead.
 
+## Licensing: deliberately none (2026-08-06)
+
+- **There is no `LICENSE` file, and that is a decision, not an oversight** — the user's
+  own call. A public repo with no license is "all rights reserved" by default: readable,
+  forkable within GitHub's ToS, and nothing more. **Don't helpfully add MIT.**
+- The loose end it creates is real and is addressed in prose rather than by relenting:
+  README §2 documents deploying your own Worker, which "all rights reserved" doesn't
+  actually permit. The README's `## License` section now states that the build/deploy
+  steps exist so the code can be inspected and verified, not as a grant to redistribute.
+- AMO's submission form requires picking a license; `STORE_LISTING_FIREFOX.md` records
+  **All Rights Reserved** to match. **These three have to move together** — the absent
+  file, the README section, and the AMO field.
+- Worth knowing what a licence would *not* have fixed: `extension/src/shared/config.js`
+  hardcodes `ssynch.emilvdijk.workers.dev`, so any fork ships something pointed at this
+  project's own Worker and free-tier quota. No licence clause prevents that; if it ever
+  matters the fix is server-side (origin checks, rate limiting), not legal.
+
 ## Verification methodology
 
 - Server/protocol changes (host-gating, message shape) are verified live against a
