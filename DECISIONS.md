@@ -153,8 +153,13 @@ cross-origin `<iframe>` about as often as a container div, and neither renders c
   only while the popover is open. Real fullscreen could not be exercised in the embedded
   browser pane (`requestFullscreen` → "Permissions check failed"), so the top-layer-above-
   fullscreen step itself rests on the spec, not on a local observation.
-- This is therefore unverified on **both** browsers, and Firefox is the likelier of the two
-  to diverge — see the Firefox build section below.
+- **Confirmed working in Firefox** (Developer Edition, 6 August 2026) against a real
+  fullscreen video: the overlay stayed visible. That was the browser judged likelier to
+  diverge — the spec says entering fullscreen *closes* open popovers, and showing one on
+  top of an already-fullscreen element is exactly where implementations differ — so this
+  is the meaningful half of the confirmation. **Chrome is still spec-only**, never
+  observed; it is now much more likely correct, but "Firefox works" is not evidence about
+  Chrome, and nobody should record it as such.
 
 ## Keeping a paused room alive (2026-08-01)
 
@@ -418,16 +423,19 @@ one remaining warning (`UNSAFE_VAR_ASSIGNMENT`, `innerHTML` in `overlay.js`) is 
 ships in the Chrome build too, and is a static template — left alone rather than refactoring
 working overlay code as part of a port.
 
-**Not verified — two things that need a real Firefox, not a code read:**
+**Runtime status (updated 6 August 2026).** The add-on was loaded in Firefox Developer
+Edition via `about:debugging` and worked: rooms connect, video resolution and sync work,
+and **the overlay stays visible in fullscreen** — so `chrome.*` promises, `storage.session`,
+the alarm keepalive and the top-layer promotion are all confirmed on real Firefox, not just
+against the docs. Two notes on what that does *not* settle:
 
-1. **The overlay's fullscreen top-layer promotion.** The `popover="manual"` + `showPopover()`
-   trick (see the fullscreen section above) is the most browser-specific code in the repo.
-   The spec position is that entering fullscreen *closes* open popovers, and showing one on
-   top of an already-fullscreen element is exactly the corner where implementations diverge;
-   no Firefox bug was found either confirming or denying it. Note the Chrome side was never
-   empirically confirmed either — it rests on the spec. The failure mode is graceful
-   (`showPopover()` throws → the attribute is backed out → the overlay is merely invisible in
-   fullscreen), so sync itself is unaffected.
+1. **The overlay's fullscreen top-layer promotion is confirmed on Firefox, not on Chrome.**
+   The `popover="manual"` + `showPopover()` trick is the most browser-specific code in the
+   repo, and Firefox was the browser judged likelier to break it — so this is the meaningful
+   half. But Chrome has still never been observed doing it (see the fullscreen section
+   above); it rests on the spec. Don't let the Firefox result quietly become a claim about
+   both. The failure mode is graceful either way (`showPopover()` throws → the attribute is
+   backed out → the overlay is merely invisible in fullscreen), so sync is unaffected.
 2. **Event-page eviction against the WebSocket.** Firefox's MV3 background is a non-persistent
    *event page*, and MDN is explicit that `setTimeout` does **not** survive idling and that
    message ports can't hold the page open. Nothing documents WebSockets doing so either, and

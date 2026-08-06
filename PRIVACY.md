@@ -108,4 +108,4 @@ date, and reflected in the extension's Chrome Web Store listing.
 
 ## Contact
 
-emil@nimble.expert
+emilvdijk@gmail.com

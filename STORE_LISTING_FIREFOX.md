@@ -186,7 +186,8 @@ UNVERIFIED note below before pasting.
 > nobody caught — every participant can, not just whoever started the room.
 >
 > ▸ **Stays out of the way.** A small widget shows who's connected and whether
-> you're in sync. Drag it anywhere, or collapse it to a single button.
+> you're in sync. Drag it anywhere, collapse it to a single button, and it
+> stays visible in fullscreen.
 >
 > ▸ **Survives real life.** It reconnects on its own after a dropped
 > connection, a page reload, or a long pause, and re-finds the video if the
@@ -214,11 +215,11 @@ UNVERIFIED note below before pasting.
 > list — no page content, and nothing about any other page you visit. Room data
 > is deleted 24 hours after a room was last used. Full policy linked below.
 
-⚠️ **UNVERIFIED claim, removed above.** The Chrome description ends that widget
-bullet with "and it stays visible in fullscreen." That rests on the overlay's
-`popover`/top-layer promotion, which has **never been exercised in real
-fullscreen on either browser** (see DECISIONS.md). It is left out here rather
-than shipped as a store promise. Put it back only after confirming it in Firefox.
+The "stays visible in fullscreen" claim was held back until it could be checked,
+because it rests on the overlay's `popover`/top-layer promotion rather than on
+anything guaranteed. **Confirmed in Firefox Developer Edition on 6 August 2026**
+against a real fullscreen video, so it ships. See DECISIONS.md for what that does
+and doesn't establish — notably, Chrome still rests on the spec.
 
 **Categories** — up to 2:
 
@@ -227,7 +228,7 @@ than shipped as a store promise. Put it back only after confirming it in Firefox
 
 **Support email**
 
-> emil@nimble.expert
+> emilvdijk@gmail.com
 
 **Homepage / support site**
 
